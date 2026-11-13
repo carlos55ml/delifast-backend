@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DeliFast API
-  version: 0.7.0
+  version: 0.8.0
   description: |
     Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
     entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
@@ -10,7 +10,8 @@ info:
     Cubre la zona de **administración** (RF-28..RF-31), la **vista del repartidor**
     (RF-23..RF-26), el **panel del negocio** (pedidos
     RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18, equipo RF-19, incidencias RF-21, estadísticas RF-22) y lo mínimo común (`/me`,
-    `/localidades`). La parte del cliente (app móvil) se añadirá cuando se programe.
+    `/localidades`) y la **app del cliente** (negocios y carta RF-05/RF-06, direcciones RF-04,
+    pedidos RF-08..RF-10).
 
     Convenciones:
     - JSON en `camelCase`. Fechas en ISO 8601 con zona (`2026-11-06T13:10:00Z`).
@@ -19,7 +20,9 @@ info:
       `user_rol` (añadido por `custom_access_token_hook`). Todo `/admin/**` exige `ADMINISTRADOR`.
       Todo `/negocio/**` y las acciones del negocio sobre `/pedidos/{id}/...` exigen `NEGOCIO`
       (dueño o empleado, sin más restricciones en la v1) y solo actúan sobre el negocio del
-      claim `negocio_id`: un pedido de otro negocio responde 404, no 403.
+      claim `negocio_id`: un pedido de otro negocio responde 404, no 403. `/me/direcciones` y
+      `/pedidos` (crear, listar y ver los suyos) exigen `CLIENTE`; un pedido o dirección de otro
+      cliente responde 404. `GET /negocios` y `GET /negocios/{id}/carta` son públicos.
     - Errores con `application/problem+json` (RFC 9457), como ya hace `GlobalExceptionHandler`:
       400 validación (con `errores`), 401 sin token, 403 rol incorrecto, 404 no existe,
       409 conflicto (p. ej. email ya registrado, o el pedido ya cambió de estado porque otra
@@ -73,6 +76,14 @@ tags:
       Tiempo real: la web no recibe los pedidos por la API sino por Supabase Realtime
       (`postgres_changes` sobre `public.pedidos` con `negocio_id=eq.<id>`, filtrado además por RLS).
       Al recibir un cambio vuelve a pedir `GET /negocio/pedidos`.
+  - name: Cliente · Negocios
+    description: Negocios y carta que ve el cliente en la app (RF-05, RF-06). Públicos.
+  - name: Cliente · Direcciones
+    description: Direcciones de entrega del cliente (RF-04).
+  - name: Cliente · Pedidos
+    description: |
+      Pedidos del cliente (RF-08..RF-10). Mientras no se monte Realtime en la app, el seguimiento
+      consulta `GET /pedidos/{id}` cada pocos segundos.
 paths:
   /me:
     get:
@@ -1152,6 +1163,184 @@ paths:
         "403": { $ref: "#/components/responses/Prohibido" }
         "404": { $ref: "#/components/responses/NoEncontrado" }
 
+  /negocios:
+    get:
+      tags: [Cliente · Negocios]
+      operationId: listarNegocios
+      summary: Negocios activos para el cliente (RF-05)
+      description: Activos, con los abiertos primero y luego por nombre. Público.
+      security: []
+      parameters:
+        - name: localidadId
+          in: query
+          required: false
+          description: Solo los de esa localidad. Sin él, todos los activos.
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Negocios
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NegocioCliente" }
+
+  /negocios/{id}/carta:
+    parameters:
+      - $ref: "#/components/parameters/NegocioId"
+    get:
+      tags: [Cliente · Negocios]
+      operationId: obtenerCartaCliente
+      summary: Carta de un negocio para el cliente (RF-06)
+      description: |
+        Categorías por `orden` con sus productos en orden de creación, incluidos los agotados
+        (`disponible: false`). Sin los productos borrados ni las categorías vacías. Público.
+        Un negocio suspendido responde 404.
+      security: []
+      responses:
+        "200":
+          description: Carta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CartaCliente" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /me/direcciones:
+    get:
+      tags: [Cliente · Direcciones]
+      operationId: listarDirecciones
+      summary: Direcciones del cliente (RF-04)
+      description: La predeterminada primero y luego por alias.
+      responses:
+        "200":
+          description: Direcciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Direccion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    post:
+      tags: [Cliente · Direcciones]
+      operationId: crearDireccion
+      summary: Añadir una dirección (RF-04)
+      description: La primera dirección del cliente queda como predeterminada aunque no se pida.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DatosDireccion" }
+      responses:
+        "201":
+          description: Dirección creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Direccion" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /me/direcciones/{id}:
+    parameters:
+      - $ref: "#/components/parameters/DireccionId"
+    put:
+      tags: [Cliente · Direcciones]
+      operationId: editarDireccion
+      summary: Editar una dirección (o marcarla como predeterminada)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DatosDireccion" }
+      responses:
+        "200":
+          description: Dirección actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Direccion" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+    delete:
+      tags: [Cliente · Direcciones]
+      operationId: borrarDireccion
+      summary: Borrar una dirección
+      description: Los pedidos antiguos conservan la dirección copiada. Si era la predeterminada, pasa a serlo otra.
+      responses:
+        "204": { description: Borrada }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /pedidos:
+    get:
+      tags: [Cliente · Pedidos]
+      operationId: listarMisPedidos
+      summary: Pedidos del cliente, del más reciente al más antiguo (RF-10)
+      responses:
+        "200":
+          description: Pedidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PedidoCliente" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    post:
+      tags: [Cliente · Pedidos]
+      operationId: crearPedido
+      summary: Hacer un pedido (RF-08)
+      description: |
+        El backend toma precios y gastos de envío de la base de datos, calcula subtotal y total y
+        copia la dirección y el teléfono del cliente. Las líneas repetidas del mismo producto se
+        suman (máx. 50 unidades por producto). Errores 422: negocio cerrado, por debajo del pedido
+        mínimo, producto agotado o que no es de la carta, dirección que no es del cliente o de otra
+        localidad, o cliente sin teléfono en su perfil. Negocio inexistente o suspendido: 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NuevoPedido" }
+      responses:
+        "201":
+          description: Pedido creado (RECIBIDO)
+          headers:
+            Location:
+              description: URL del pedido creado
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PedidoCliente" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "422":
+          description: El pedido incumple una regla de negocio
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+
+  /pedidos/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PedidoId"
+    get:
+      tags: [Cliente · Pedidos]
+      operationId: obtenerMiPedido
+      summary: Un pedido del cliente con su historial (seguimiento, RF-09)
+      responses:
+        "200":
+          description: Pedido
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PedidoCliente" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1161,6 +1350,11 @@ components:
       description: Access token de Supabase Auth.
 
   parameters:
+    DireccionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
     NegocioId:
       name: id
       in: path
@@ -1812,3 +2006,141 @@ components:
             subtotal: { type: number }
             gastosEnvio: { type: number }
             total: { type: number }
+
+    NegocioCliente:
+      type: object
+      required: [id, nombre, direccion, telefono, localidad, gastosEnvio, pedidoMinimo, abierto]
+      properties:
+        id: { type: integer, format: int64 }
+        nombre: { type: string }
+        descripcion: { type: [string, "null"] }
+        direccion: { type: string }
+        telefono: { type: string }
+        localidad: { $ref: "#/components/schemas/Localidad" }
+        logoUrl: { type: [string, "null"] }
+        gastosEnvio: { type: number }
+        pedidoMinimo: { type: number }
+        abierto:
+          type: boolean
+          description: Si ahora mismo acepta pedidos (horario + interruptor del negocio).
+
+    ProductoCliente:
+      type: object
+      required: [id, nombre, precio, disponible]
+      properties:
+        id: { type: integer, format: int64 }
+        nombre: { type: string }
+        descripcion: { type: [string, "null"] }
+        precio: { type: number }
+        fotoUrl: { type: [string, "null"] }
+        disponible:
+          type: boolean
+          description: false = agotado; se muestra pero no se puede pedir (RF-06).
+
+    CartaCliente:
+      type: object
+      required: [negocio, categorias]
+      properties:
+        negocio: { $ref: "#/components/schemas/NegocioCliente" }
+        categorias:
+          type: array
+          items:
+            type: object
+            required: [id, nombre, productos]
+            properties:
+              id: { type: integer, format: int64 }
+              nombre: { type: string }
+              productos:
+                type: array
+                items: { $ref: "#/components/schemas/ProductoCliente" }
+
+    Direccion:
+      type: object
+      required: [id, alias, calle, codigoPostal, localidad, predeterminada]
+      properties:
+        id: { type: integer, format: int64 }
+        alias: { type: string, examples: [Casa] }
+        calle: { type: string, examples: [Av. de la Constitución 8, 1º A] }
+        codigoPostal: { type: string, examples: ["41640"] }
+        localidad: { $ref: "#/components/schemas/Localidad" }
+        indicaciones: { type: [string, "null"], examples: [Timbre 1ºA] }
+        predeterminada: { type: boolean }
+
+    DatosDireccion:
+      type: object
+      required: [alias, calle, codigoPostal, localidadId]
+      properties:
+        alias: { type: string, minLength: 1, maxLength: 40 }
+        calle: { type: string, minLength: 1, maxLength: 200 }
+        codigoPostal: { type: string, pattern: "^\\d{5}$" }
+        localidadId: { type: integer, format: int64 }
+        indicaciones: { type: [string, "null"], maxLength: 200 }
+        predeterminada:
+          type: boolean
+          description: true la marca como predeterminada y desmarca la anterior. Por defecto false.
+
+    NuevoPedido:
+      type: object
+      required: [negocioId, direccionId, metodoPago, lineas]
+      properties:
+        negocioId: { type: integer, format: int64 }
+        direccionId: { type: integer, format: int64 }
+        metodoPago: { $ref: "#/components/schemas/MetodoPago" }
+        nota: { type: [string, "null"], maxLength: 500 }
+        lineas:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [productoId, cantidad]
+            properties:
+              productoId: { type: integer, format: int64 }
+              cantidad: { type: integer, minimum: 1, maximum: 50 }
+
+    PedidoCliente:
+      type: object
+      required: [id, codigo, negocio, estado, metodoPago, direccionEntrega, subtotal, gastosEnvio, total, fechaCreacion, lineas, historial]
+      properties:
+        id: { type: integer, format: int64 }
+        codigo: { type: string, examples: [DF-001048] }
+        negocio:
+          type: object
+          required: [id, nombre]
+          properties:
+            id: { type: integer, format: int64 }
+            nombre: { type: string }
+        estado: { $ref: "#/components/schemas/EstadoPedido" }
+        metodoPago: { $ref: "#/components/schemas/MetodoPago" }
+        nota: { type: [string, "null"] }
+        direccionEntrega:
+          type: string
+          description: Copia de la dirección al hacer el pedido ("calle, CP Localidad (indicaciones)").
+        subtotal: { type: number }
+        gastosEnvio: { type: number }
+        total: { type: number }
+        tiempoEstimadoMin: { type: [integer, "null"] }
+        motivoRechazo: { type: [string, "null"] }
+        fechaCreacion: { type: string, format: date-time }
+        lineas:
+          type: array
+          items:
+            type: object
+            required: [nombreProducto, precioUnitario, cantidad]
+            properties:
+              productoId:
+                type: [integer, "null"]
+                format: int64
+                description: Nulo si el producto se borró después.
+              nombreProducto: { type: string }
+              precioUnitario: { type: number }
+              cantidad: { type: integer }
+        historial:
+          type: array
+          description: Cambios de estado, del más antiguo al más reciente.
+          items:
+            type: object
+            required: [estado, fecha]
+            properties:
+              estado: { $ref: "#/components/schemas/EstadoPedido" }
+              fecha: { type: string, format: date-time }
