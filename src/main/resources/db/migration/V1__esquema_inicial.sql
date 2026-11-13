@@ -143,6 +143,9 @@ create table public.pedidos (
     nota                 text,
     -- Copias: el pedido no cambia si luego cambian la dirección o el negocio.
     direccion_entrega    text not null,
+    -- Posición de la dirección, si la app la guardó: el repartidor la ve en el mapa (RF-24).
+    latitud_entrega      double precision,
+    longitud_entrega     double precision,
     telefono_contacto    text not null,
     subtotal             numeric(8,2) not null check (subtotal >= 0),
     gastos_envio         numeric(8,2) not null check (gastos_envio >= 0),

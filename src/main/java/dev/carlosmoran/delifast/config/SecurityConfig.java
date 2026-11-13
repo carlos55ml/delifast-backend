@@ -34,6 +34,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/pedidos/*/aceptar", "/pedidos/*/rechazar",
                                 "/pedidos/*/listo", "/pedidos/*/asignar",
                                 "/incidencias/*/responder", "/incidencias/*/resolver").hasRole("NEGOCIO")
+                        .requestMatchers("/repartidor/**", "/repartos/**").hasRole("REPARTIDOR")
                         .requestMatchers("/me/direcciones", "/me/direcciones/**").hasRole("CLIENTE")
                         .requestMatchers(HttpMethod.POST, "/pedidos").hasRole("CLIENTE")
                         .requestMatchers(HttpMethod.GET, "/pedidos", "/pedidos/*").hasRole("CLIENTE")

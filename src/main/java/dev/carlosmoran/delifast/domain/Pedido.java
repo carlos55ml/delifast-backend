@@ -61,6 +61,13 @@ public class Pedido {
     @Column(name = "direccion_entrega", nullable = false)
     private String direccionEntrega;
 
+    /** Copia de la posición de la dirección (para el mapa del repartidor); nula si no se conoce. */
+    @Column(name = "latitud_entrega")
+    private Double latitudEntrega;
+
+    @Column(name = "longitud_entrega")
+    private Double longitudEntrega;
+
     @Column(name = "telefono_contacto", nullable = false)
     private String telefonoContacto;
 
@@ -159,6 +166,15 @@ public class Pedido {
     public String getDireccionEntrega() { return direccionEntrega; }
 
     public String getTelefonoContacto() { return telefonoContacto; }
+
+    public Double getLatitudEntrega() { return latitudEntrega; }
+
+    public Double getLongitudEntrega() { return longitudEntrega; }
+
+    public void setPosicionEntrega(Double latitud, Double longitud) {
+        this.latitudEntrega = latitud;
+        this.longitudEntrega = longitud;
+    }
 
     public BigDecimal getSubtotal() { return subtotal; }
 

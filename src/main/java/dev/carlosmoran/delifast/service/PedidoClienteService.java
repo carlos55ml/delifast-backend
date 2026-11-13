@@ -85,6 +85,7 @@ public class PedidoClienteService {
         }
 
         Pedido pedido = new Pedido(cliente, negocio, datos.metodoPago(), textoEntrega(direccion), cliente.getTelefono());
+        pedido.setPosicionEntrega(direccion.getLatitud(), direccion.getLongitud());
         pedido.setNota(datos.nota() == null || datos.nota().isBlank() ? null : datos.nota().trim());
         Map<Long, Integer> unidades = unidadesPorProducto(datos);
         Map<Long, Producto> encontrados = productos.findAllById(unidades.keySet()).stream()

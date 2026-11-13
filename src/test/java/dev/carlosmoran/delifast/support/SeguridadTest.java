@@ -55,6 +55,12 @@ public final class SeguridadTest {
         return token(GESTOR_ID, "NEGOCIO", negocioId, true);
     }
 
+    public static final UUID REPARTIDOR_ID = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
+
+    public static JwtRequestPostProcessor repartidor(long negocioId) {
+        return token(REPARTIDOR_ID, "REPARTIDOR", negocioId, false);
+    }
+
     public static JwtRequestPostProcessor cliente() {
         return token(UUID.fromString("00000000-0000-0000-0000-00000000000c"), "CLIENTE", null, false);
     }
