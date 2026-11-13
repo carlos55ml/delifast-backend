@@ -1,0 +1,425 @@
+openapi: 3.1.0
+info:
+  title: DeliFast API
+  version: 0.1.0
+  description: |
+    Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
+    entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
+    (que lo copia en `docs/api/openapi.yaml` y lo implementa).
+
+    Por ahora cubre la zona de **administración** (RF-28..RF-31) y lo mínimo común
+    (`/me`, `/localidades`). Negocio y repartidor se añadirán aquí cuando se programen.
+
+    Convenciones:
+    - JSON en `camelCase`. Fechas en ISO 8601 con zona (`2026-11-06T13:10:00Z`).
+      Importes como número con 2 decimales.
+    - Autenticación: `Authorization: Bearer <JWT de Supabase>`. El rol va en el claim
+      `user_rol` (añadido por `custom_access_token_hook`). Todo `/admin/**` exige `ADMINISTRADOR`.
+    - Errores con `application/problem+json` (RFC 9457), como ya hace `GlobalExceptionHandler`:
+      400 validación (con `errores`), 401 sin token, 403 rol incorrecto, 404 no existe,
+      409 conflicto (p. ej. email ya registrado), 422 regla de negocio.
+    - Las listas de administración son pequeñas (decenas de filas), así que se devuelven
+      completas, sin paginar.
+servers:
+  - url: http://localhost:8080
+    description: Desarrollo local
+security:
+  - bearerAuth: []
+tags:
+  - name: Perfil
+  - name: Localidades
+  - name: Administración
+paths:
+  /me:
+    get:
+      tags: [Perfil]
+      operationId: obtenerPerfil
+      summary: Perfil del usuario autenticado
+      responses:
+        "200":
+          description: Perfil
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Perfil" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+
+  /localidades:
+    get:
+      tags: [Localidades]
+      operationId: listarLocalidades
+      summary: Localidades donde opera DeliFast
+      description: Pública (también la usa la app al registrarse). Ordenadas por nombre.
+      security: []
+      responses:
+        "200":
+          description: Localidades
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Localidad" }
+
+  /admin/resumen:
+    get:
+      tags: [Administración]
+      operationId: obtenerResumenAdmin
+      summary: Resumen de la plataforma (A01, RF-31)
+      description: Indicadores del día (zona horaria Europe/Madrid), pedidos de hoy por negocio e incidencias recientes.
+      responses:
+        "200":
+          description: Resumen
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResumenAdmin" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /admin/negocios:
+    get:
+      tags: [Administración]
+      operationId: listarNegociosAdmin
+      summary: Negocios dados de alta (A02, RF-29)
+      parameters:
+        - name: activo
+          in: query
+          required: false
+          description: Filtra por activos (`true`) o suspendidos (`false`). Sin él, todos.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Negocios ordenados por nombre
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NegocioAdmin" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    post:
+      tags: [Administración]
+      operationId: altaNegocio
+      summary: Dar de alta un negocio y la cuenta de su dueño (A03, RF-28)
+      description: |
+        En una transacción: crea el negocio y la cuenta del dueño en Supabase Auth con la
+        Admin API (`inviteUserByEmail`, con `app_metadata` = `{rol: NEGOCIO, negocio_id, es_dueno: true}`).
+        El dueño recibe un email para crear su contraseña. Si falla la invitación, no se crea el negocio.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AltaNegocio" }
+      responses:
+        "201":
+          description: Negocio creado
+          headers:
+            Location:
+              description: URL del negocio creado
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NegocioAdmin" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "409":
+          description: Ya existe una cuenta con ese email
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+
+  /admin/negocios/{id}:
+    parameters:
+      - $ref: "#/components/parameters/NegocioId"
+    put:
+      tags: [Administración]
+      operationId: editarNegocioAdmin
+      summary: Corregir los datos básicos de un negocio (icono de editar en A02)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DatosNegocio" }
+      responses:
+        "200":
+          description: Negocio actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NegocioAdmin" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /admin/negocios/{id}/activo:
+    parameters:
+      - $ref: "#/components/parameters/NegocioId"
+    patch:
+      tags: [Administración]
+      operationId: cambiarActivoNegocio
+      summary: Activar o suspender un negocio (interruptor de A02, RF-29)
+      description: |
+        Un negocio suspendido deja de aparecer en la app y sus cuentas no pueden iniciar sesión
+        (el hook del token lo rechaza). Al suspender, el backend cierra las sesiones abiertas de
+        sus cuentas con la Admin API (arquitectura 5.1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [activo]
+              properties:
+                activo: { type: boolean }
+      responses:
+        "200":
+          description: Negocio actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NegocioAdmin" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /admin/incidencias:
+    get:
+      tags: [Administración]
+      operationId: listarIncidenciasAdmin
+      summary: Incidencias de todos los negocios (A04, RF-30)
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          description: |
+            Uno o varios estados (`?estado=ABIERTA&estado=RESPONDIDA`). Sin él, todas.
+            El filtro "Abiertas" de la web pide ABIERTA y RESPONDIDA (aún sin resolver).
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/EstadoIncidencia" }
+        - name: negocioId
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Incidencias, de la más reciente a la más antigua
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IncidenciaAdmin" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token de Supabase Auth.
+
+  parameters:
+    NegocioId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  responses:
+    Validacion:
+      description: Datos de entrada no válidos
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problema" }
+    NoAutenticado:
+      description: Falta el token o no es válido
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problema" }
+    Prohibido:
+      description: El rol del usuario no permite la operación
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problema" }
+    NoEncontrado:
+      description: El recurso no existe
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problema" }
+
+  schemas:
+    Rol:
+      type: string
+      enum: [CLIENTE, NEGOCIO, REPARTIDOR, ADMINISTRADOR]
+
+    EstadoIncidencia:
+      type: string
+      enum: [ABIERTA, RESPONDIDA, RESUELTA]
+
+    TipoIncidencia:
+      type: string
+      enum: [FALTA_PRODUCTO, RETRASO, PRODUCTO_MAL_ESTADO, CLIENTE_AUSENTE, DIRECCION_INCORRECTA, OTRA]
+
+    OrigenIncidencia:
+      type: string
+      enum: [CLIENTE, REPARTIDOR]
+
+    Problema:
+      type: object
+      description: ProblemDetail (RFC 9457) de Spring.
+      required: [status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errores:
+          type: array
+          description: "Solo en 400. Cada elemento es `campo: mensaje`."
+          items: { type: string }
+
+    Perfil:
+      type: object
+      required: [id, nombre, email, rol]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        email: { type: string, format: email }
+        telefono: { type: [string, "null"] }
+        rol: { $ref: "#/components/schemas/Rol" }
+        negocioId: { type: [integer, "null"], format: int64 }
+        esDueno: { type: boolean }
+
+    Localidad:
+      type: object
+      required: [id, nombre, provincia]
+      properties:
+        id: { type: integer, format: int64 }
+        nombre: { type: string, examples: [Osuna] }
+        provincia: { type: string, examples: [Sevilla] }
+
+    DatosNegocio:
+      type: object
+      required: [nombre, localidadId, direccion, telefono]
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 100, examples: [Heladería La Sirena] }
+        localidadId: { type: integer, format: int64 }
+        direccion: { type: string, minLength: 1, maxLength: 200, examples: [C/ San Pedro 5] }
+        telefono: { type: string, minLength: 9, maxLength: 20, examples: [955 821 456] }
+
+    AltaNegocio:
+      allOf:
+        - $ref: "#/components/schemas/DatosNegocio"
+        - type: object
+          required: [dueno]
+          properties:
+            dueno:
+              type: object
+              required: [nombre, email]
+              properties:
+                nombre: { type: string, minLength: 1, maxLength: 100, examples: [Lola Sánchez] }
+                email: { type: string, format: email, examples: [lola@heladerialasirena.es] }
+
+    NegocioAdmin:
+      type: object
+      required: [id, nombre, localidad, direccion, telefono, dueno, pedidosHoy, abierto, activo, fechaAlta]
+      properties:
+        id: { type: integer, format: int64 }
+        nombre: { type: string }
+        localidad: { $ref: "#/components/schemas/Localidad" }
+        direccion: { type: string }
+        telefono: { type: string }
+        dueno:
+          description: Cuenta del dueño. Nula si aún no se ha creado.
+          oneOf:
+            - $ref: "#/components/schemas/DuenoNegocio"
+            - type: "null"
+        pedidosHoy: { type: integer, minimum: 0 }
+        abierto:
+          type: boolean
+          description: Si ahora mismo acepta pedidos (horario + interruptor manual del negocio).
+        activo:
+          type: boolean
+          description: false = suspendido por el administrador.
+        fechaAlta: { type: string, format: date-time }
+
+    DuenoNegocio:
+      type: object
+      required: [id, nombre, email]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        email: { type: string, format: email }
+
+    IncidenciaAdmin:
+      type: object
+      required: [id, tipo, estado, origen, descripcion, fechaCreacion, pedido, negocio]
+      properties:
+        id: { type: integer, format: int64 }
+        tipo: { $ref: "#/components/schemas/TipoIncidencia" }
+        estado: { $ref: "#/components/schemas/EstadoIncidencia" }
+        origen: { $ref: "#/components/schemas/OrigenIncidencia" }
+        descripcion: { type: string }
+        respuesta: { type: [string, "null"] }
+        fechaCreacion: { type: string, format: date-time }
+        fechaResolucion: { type: [string, "null"], format: date-time }
+        pedido:
+          type: object
+          required: [id, codigo]
+          properties:
+            id: { type: integer, format: int64 }
+            codigo: { type: string, examples: [DF-001036] }
+        negocio:
+          type: object
+          required: [id, nombre]
+          properties:
+            id: { type: integer, format: int64 }
+            nombre: { type: string }
+
+    PedidosNegocioHoy:
+      type: object
+      required: [negocioId, nombre, localidad, pedidos, abierto]
+      properties:
+        negocioId: { type: integer, format: int64 }
+        nombre: { type: string }
+        localidad: { type: string }
+        pedidos: { type: integer, minimum: 0 }
+        abierto: { type: boolean }
+
+    ResumenAdmin:
+      type: object
+      required:
+        - negociosActivos
+        - negociosTotales
+        - pedidosHoy
+        - localidadesConPedidosHoy
+        - incidenciasAbiertas
+        - incidenciasHoy
+        - repartidoresEnRuta
+        - pedidosHoyPorNegocio
+        - incidenciasRecientes
+      properties:
+        negociosActivos: { type: integer }
+        negociosTotales: { type: integer }
+        pedidosHoy: { type: integer }
+        localidadesConPedidosHoy: { type: integer }
+        incidenciasAbiertas:
+          type: integer
+          description: ABIERTA + RESPONDIDA.
+        incidenciasHoy:
+          type: integer
+          description: Incidencias abiertas comunicadas hoy.
+        repartidoresEnRuta:
+          type: integer
+          description: Repartidores con algún reparto EN_REPARTO ahora mismo.
+        pedidosHoyPorNegocio:
+          type: array
+          description: Negocios activos, de más a menos pedidos hoy.
+          items: { $ref: "#/components/schemas/PedidosNegocioHoy" }
+        incidenciasRecientes:
+          type: array
+          description: Las 5 últimas incidencias sin resolver.
+          items: { $ref: "#/components/schemas/IncidenciaAdmin" }
