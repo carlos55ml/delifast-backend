@@ -477,3 +477,17 @@ to authenticated;
 -- Realtime respeta las políticas RLS de arriba.
 -- -----------------------------------------------------------------------------
 alter publication supabase_realtime add table public.pedidos, public.repartos;
+
+
+-- -----------------------------------------------------------------------------
+-- 7. Storage (arquitectura 5.5)
+-- Buckets públicos para logos de negocios y fotos de productos: cualquiera puede
+-- leerlos por su URL pública. Solo sube y borra el backend, con la clave
+-- service_role, así que no hacen falta políticas sobre storage.objects.
+-- El backend ya comprueba tipo y tamaño; el bucket lo vuelve a limitar.
+-- -----------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values
+    ('logos', 'logos', true, 2097152, array['image/jpeg', 'image/png', 'image/webp']),
+    ('productos', 'productos', true, 2097152, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do nothing;
