@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
   title: DeliFast API
-  version: 0.6.0
+  version: 0.7.0
   description: |
     Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
     entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
     (que lo copia en `docs/api/openapi.yaml` y lo implementa).
 
-    Cubre la zona de **administración** (RF-28..RF-31), el **panel del negocio** (pedidos
+    Cubre la zona de **administración** (RF-28..RF-31), la **vista del repartidor**
+    (RF-23..RF-26), el **panel del negocio** (pedidos
     RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18, equipo RF-19, incidencias RF-21, estadísticas RF-22) y lo mínimo común (`/me`,
-    `/localidades`). El resto del negocio y el repartidor se añadirán aquí cuando se programen.
+    `/localidades`). La parte del cliente (app móvil) se añadirá cuando se programe.
 
     Convenciones:
     - JSON en `camelCase`. Fechas en ISO 8601 con zona (`2026-11-06T13:10:00Z`).
@@ -57,6 +58,12 @@ tags:
       `responsable_id`.
   - name: Negocio · Estadísticas
     description: Cifras del negocio calculadas con consultas SQL en `EstadisticasService` (N06, RF-22).
+  - name: Repartidor
+    description: |
+      Vista móvil del repartidor (R01..R06). Todo `/repartidor/**` y `/repartos/**` exige
+      `REPARTIDOR` y solo ve sus propios repartos (un reparto de otro responde 404).
+      Tiempo real: escucha `postgres_changes` sobre `public.repartos` con
+      `repartidor_id=eq.<su id>` para ver al momento lo que le asigna el negocio (RF-20).
   - name: Negocio · Pedidos
     description: |
       Panel de pedidos del negocio (N01, N02, N08). Estados: RECIBIDO → EN_PREPARACION (aceptar)
@@ -999,6 +1006,152 @@ paths:
         "401": { $ref: "#/components/responses/NoAutenticado" }
         "403": { $ref: "#/components/responses/Prohibido" }
 
+
+  /repartidor/perfil:
+    get:
+      tags: [Repartidor]
+      operationId: obtenerPerfilRepartidor
+      summary: Perfil del repartidor con su disponibilidad y su actividad de hoy (R06)
+      responses:
+        "200":
+          description: Perfil
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PerfilRepartidor" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /repartidor/disponible:
+    patch:
+      tags: [Repartidor]
+      operationId: cambiarDisponibleRepartidor
+      summary: Marcarse como disponible o no para repartos (R06, arquitectura 5.4)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disponible]
+              properties:
+                disponible: { type: boolean }
+      responses:
+        "200":
+          description: Perfil actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PerfilRepartidor" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /repartidor/repartos:
+    get:
+      tags: [Repartidor]
+      operationId: listarRepartosRepartidor
+      summary: Mis pedidos (R01 y R05, RF-23)
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          description: |
+            EN_REPARTO = los que tiene que entregar; ENTREGADO = los entregados hoy. Sin él, los dos.
+          schema:
+            type: string
+            enum: [EN_REPARTO, ENTREGADO]
+      responses:
+        "200":
+          description: Repartos, del más reciente al más antiguo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RepartoRepartidor" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /repartidor/repartos/{id}:
+    parameters:
+      - $ref: "#/components/parameters/RepartoId"
+    get:
+      tags: [Repartidor]
+      operationId: obtenerRepartoRepartidor
+      summary: Detalle de un reparto (R02, RF-24)
+      responses:
+        "200":
+          description: Reparto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RepartoRepartidor" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /repartos/{id}/entregar:
+    parameters:
+      - $ref: "#/components/parameters/RepartoId"
+    post:
+      tags: [Repartidor]
+      operationId: entregarReparto
+      summary: Confirmar entrega y cobro (R03, RF-25)
+      description: |
+        Pasa el pedido a ENTREGADO, guarda la hora de entrega (O3), el método de cobro real y
+        `cobro_confirmado = true`. El método puede no coincidir con el que eligió el cliente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [metodoCobro]
+              properties:
+                metodoCobro: { $ref: "#/components/schemas/MetodoPago" }
+      responses:
+        "200":
+          description: Reparto entregado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RepartoRepartidor" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409": { $ref: "#/components/responses/EstadoCambiado" }
+
+  /repartos/{id}/incidencias:
+    parameters:
+      - $ref: "#/components/parameters/RepartoId"
+    post:
+      tags: [Repartidor]
+      operationId: comunicarIncidenciaReparto
+      summary: Comunicar una incidencia de reparto (R04, RF-26)
+      description: |
+        Crea la incidencia con `origen = REPARTIDOR` sobre el pedido del reparto; el negocio la ve
+        al momento en N05. No cambia el estado del pedido.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tipo]
+              properties:
+                tipo:
+                  $ref: "#/components/schemas/TipoIncidencia"
+                descripcion:
+                  type: [string, "null"]
+                  maxLength: 500
+                  description: Opcional. Si falta, el backend guarda el nombre del tipo.
+      responses:
+        "201":
+          description: Incidencia creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidenciaNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1024,6 +1177,11 @@ components:
       required: true
       schema: { type: integer, format: int64 }
     ProductoId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    RepartoId:
       name: id
       in: path
       required: true
@@ -1593,3 +1751,64 @@ components:
             properties:
               nombre: { type: string, examples: [Hamburguesa clásica] }
               unidades: { type: integer, minimum: 0 }
+
+    PerfilRepartidor:
+      type: object
+      required: [id, nombre, email, negocio, disponible, repartosHoy, enCurso]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string, examples: [Marta Díaz] }
+        email: { type: string, format: email }
+        telefono: { type: [string, "null"] }
+        negocio:
+          type: object
+          required: [id, nombre, localidad]
+          properties:
+            id: { type: integer, format: int64 }
+            nombre: { type: string }
+            localidad: { type: string, examples: [Osuna] }
+        disponible: { type: boolean }
+        repartosHoy: { type: integer, minimum: 0, description: "Asignados hoy, entregados o no." }
+        enCurso: { type: integer, minimum: 0, description: Repartos EN_REPARTO ahora. }
+
+    RepartoRepartidor:
+      type: object
+      required: [id, estado, fechaAsignacion, pedido]
+      properties:
+        id: { type: integer, format: int64 }
+        estado:
+          type: string
+          enum: [EN_REPARTO, ENTREGADO]
+          description: Estado del pedido del reparto.
+        fechaAsignacion: { type: string, format: date-time }
+        fechaEntrega: { type: [string, "null"], format: date-time }
+        metodoCobro:
+          description: Cómo cobró de verdad el repartidor (al entregar).
+          oneOf:
+            - $ref: "#/components/schemas/MetodoPago"
+            - type: "null"
+        pedido:
+          type: object
+          required: [id, codigo, cliente, direccionEntrega, telefonoContacto, metodoPago, lineas, subtotal, gastosEnvio, total]
+          properties:
+            id: { type: integer, format: int64 }
+            codigo: { type: string }
+            cliente:
+              type: object
+              required: [nombre]
+              properties:
+                nombre: { type: string }
+            direccionEntrega: { type: string, examples: [C/ Carrera 12, 2º B · Osuna (Sevilla)] }
+            latitud:
+              type: [number, "null"]
+              description: De la dirección del cliente, si la app guardó la posición. Para el mapa (RF-24).
+            longitud: { type: [number, "null"] }
+            telefonoContacto: { type: string }
+            metodoPago: { $ref: "#/components/schemas/MetodoPago" }
+            nota: { type: [string, "null"] }
+            lineas:
+              type: array
+              items: { $ref: "#/components/schemas/LineaPedido" }
+            subtotal: { type: number }
+            gastosEnvio: { type: number }
+            total: { type: number }
