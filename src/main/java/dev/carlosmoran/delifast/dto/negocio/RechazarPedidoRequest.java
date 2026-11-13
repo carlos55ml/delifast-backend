@@ -1,0 +1,7 @@
+package dev.carlosmoran.delifast.dto.negocio;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record RechazarPedidoRequest(@NotBlank @Size(max = 300) String motivo) {
+}

@@ -23,6 +23,8 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+        # Carga las colecciones perezosas (líneas, historial...) de varios pedidos en una consulta.
+        default_batch_fetch_size: 50
   flyway:
     enabled: true
     locations: classpath:db/migration

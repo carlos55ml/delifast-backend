@@ -7,7 +7,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 
-/** Repartidor de un negocio. Solo ve los pedidos LISTO si está disponible. */
+/** Repartidor de un negocio. El negocio solo le asigna pedidos si está activo y disponible. */
 @Entity
 @DiscriminatorValue("REPARTIDOR")
 public class Repartidor extends Usuario {

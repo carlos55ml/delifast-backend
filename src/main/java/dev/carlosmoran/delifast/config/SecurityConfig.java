@@ -30,7 +30,9 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/localidades").permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMINISTRADOR")
-                        .requestMatchers("/negocio/**").hasRole("NEGOCIO")
+                        .requestMatchers("/negocio", "/negocio/**").hasRole("NEGOCIO")
+                        .requestMatchers(HttpMethod.POST, "/pedidos/*/aceptar", "/pedidos/*/rechazar",
+                                "/pedidos/*/listo", "/pedidos/*/asignar").hasRole("NEGOCIO")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(new SupabaseJwtAuthenticationConverter()))

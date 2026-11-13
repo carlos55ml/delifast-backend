@@ -125,6 +125,13 @@ public class Pedido {
         estado = nuevo;
     }
 
+    /** Crea el reparto con el repartidor elegido por el negocio y pasa el pedido a EN_REPARTO (RF-20). */
+    public Reparto asignarRepartidor(Repartidor repartidor, Usuario autor) {
+        reparto = new Reparto(this, repartidor);
+        cambiarEstado(EstadoPedido.EN_REPARTO, autor);
+        return reparto;
+    }
+
     public boolean puedeCancelarse() {
         return estado == EstadoPedido.RECIBIDO;
     }

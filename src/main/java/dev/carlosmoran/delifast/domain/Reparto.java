@@ -16,8 +16,9 @@ import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
 
 /**
- * Entrega de un pedido por un repartidor. pedido_id es único en la base de
- * datos: si dos repartidores toman el mismo pedido, solo entra el primero.
+ * Entrega de un pedido por un repartidor. Lo crea el negocio al asignar el pedido
+ * LISTO a uno de sus repartidores. pedido_id es único en la base de datos: un
+ * pedido tiene como mucho un reparto aunque dos personas lo asignen a la vez.
  * La última posición del repartidor (UbicacionRepartidor, RF-27) son columnas
  * de esta tabla.
  */

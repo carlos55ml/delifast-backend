@@ -8,4 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface RepartidorRepository extends JpaRepository<Repartidor, UUID> {
 
     List<Repartidor> findByNegocioId(Long negocioId);
+
+    List<Repartidor> findByNegocioIdOrderByNombreAsc(Long negocioId);
+
+    List<Repartidor> findByNegocioIdAndActivoTrueAndDisponibleTrueOrderByNombreAsc(Long negocioId);
 }
