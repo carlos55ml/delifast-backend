@@ -40,6 +40,14 @@ public interface PedidoRepository extends JpaRepository<Pedido, Long> {
     @EntityGraph(attributePaths = {"cliente"})
     Optional<Pedido> findByIdAndNegocioId(Long id, Long negocioId);
 
+    // ---- Cliente (RF-09, RF-10) ----
+
+    @EntityGraph(attributePaths = {"negocio"})
+    List<Pedido> findByClienteIdOrderByFechaCreacionDesc(java.util.UUID clienteId);
+
+    @EntityGraph(attributePaths = {"negocio"})
+    Optional<Pedido> findByIdAndClienteId(Long id, java.util.UUID clienteId);
+
     // ---- Estadísticas (RF-22) ----
 
     /** Fechas de los pedidos que cuentan (ni rechazados ni cancelados) de un periodo. */

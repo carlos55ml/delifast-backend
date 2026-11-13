@@ -13,4 +13,10 @@ public interface NegocioRepository extends JpaRepository<Negocio, Long> {
     @EntityGraph(attributePaths = {"localidad", "horarios"})
     List<Negocio> findByActivoOrderByNombreAsc(boolean activo);
 
+    @EntityGraph(attributePaths = {"localidad", "horarios"})
+    List<Negocio> findByActivoTrueAndLocalidadIdOrderByNombreAsc(Long localidadId);
+
+    @EntityGraph(attributePaths = {"localidad", "horarios"})
+    java.util.Optional<Negocio> findByIdAndActivoTrue(Long id);
+
 }

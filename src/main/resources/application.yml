@@ -67,5 +67,9 @@ delifast:
     url: ${SUPABASE_URL:https://ivbnvdtdvzphgmurhuts.supabase.co}
     # Clave service_role para la Admin API de Auth (alta de cuentas). Solo en .env.
     service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+  web:
+    # Enlace de los emails de invitación (dueños, empleados y repartidores): la web confirma
+    # el token y lleva a crear la contraseña. Debe estar en las Redirect URLs de Supabase Auth.
+    url-invitacion: ${URL_INVITACION:http://localhost:3000/auth/confirmar?siguiente=/nueva-contrasena}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}

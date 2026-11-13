@@ -119,6 +119,11 @@ public class Pedido {
         total = subtotal.add(gastosEnvio);
     }
 
+    /** Primer registro del historial, al crear el pedido (estado anterior nulo). */
+    public void registrarCreacion(Usuario autor) {
+        historial.add(new CambioEstado(this, autor, null, EstadoPedido.RECIBIDO));
+    }
+
     /** Cambia el estado y deja constancia en el historial. Las reglas de transición van en el servicio. */
     public void cambiarEstado(EstadoPedido nuevo, Usuario autor) {
         historial.add(new CambioEstado(this, autor, estado, nuevo));

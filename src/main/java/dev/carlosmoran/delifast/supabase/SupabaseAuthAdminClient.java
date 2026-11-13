@@ -35,15 +35,20 @@ public class SupabaseAuthAdminClient implements SupabaseAuthAdmin {
 
     private final RestClient http;
     private final boolean configurado;
+    /** Página de la web a la que lleva el enlace del email (crear contraseña). */
+    private final String urlInvitacion;
 
     @Autowired
     public SupabaseAuthAdminClient(@Value("${delifast.supabase.url}") String supabaseUrl,
-                                   @Value("${delifast.supabase.service-role-key:}") String serviceRoleKey) {
-        this(RestClient.builder(), supabaseUrl, serviceRoleKey);
+                                   @Value("${delifast.supabase.service-role-key:}") String serviceRoleKey,
+                                   @Value("${delifast.web.url-invitacion}") String urlInvitacion) {
+        this(RestClient.builder(), supabaseUrl, serviceRoleKey, urlInvitacion);
     }
 
     /** Recibe el builder para poder enlazarlo a MockRestServiceServer en los tests. */
-    SupabaseAuthAdminClient(RestClient.Builder builder, String supabaseUrl, String serviceRoleKey) {
+    SupabaseAuthAdminClient(RestClient.Builder builder, String supabaseUrl, String serviceRoleKey,
+                            String urlInvitacion) {
+        this.urlInvitacion = urlInvitacion;
         this.configurado = serviceRoleKey != null && !serviceRoleKey.isBlank();
         this.http = builder
                 .baseUrl(supabaseUrl + "/auth/v1")
@@ -78,7 +83,9 @@ public class SupabaseAuthAdminClient implements SupabaseAuthAdmin {
         UUID id = UUID.fromString(String.valueOf(usuario.get("id")));
 
         try {
-            llamar(() -> http.post().uri("/invite")
+            // Como inviteUserByEmail de supabase-js: redirect_to va en la query. La URL tiene que
+            // estar en Authentication → URL Configuration → Redirect URLs del proyecto Supabase.
+            llamar(() -> http.post().uri(u -> u.path("/invite").queryParam("redirect_to", "{url}").build(urlInvitacion))
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("email", cuenta.email()))
                     .retrieve()

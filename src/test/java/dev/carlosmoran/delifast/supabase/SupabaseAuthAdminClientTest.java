@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -24,6 +25,7 @@ import org.springframework.web.client.RestClient;
 class SupabaseAuthAdminClientTest {
 
     private static final String URL = "https://proyecto.supabase.co";
+    private static final String INVITACION = "http://localhost:3000/auth/confirmar?siguiente=/nueva-contrasena";
     private static final UUID ID = UUID.fromString("5b0c1d4e-0000-4000-8000-000000000001");
     private static final NuevaCuenta LOLA = new NuevaCuenta("lola@lasirena.es", "Lola", Rol.NEGOCIO, 7L, true);
 
@@ -34,7 +36,7 @@ class SupabaseAuthAdminClientTest {
     void preparar() {
         RestClient.Builder builder = RestClient.builder();
         servidor = MockRestServiceServer.bindTo(builder).build();
-        cliente = new SupabaseAuthAdminClient(builder, URL, "clave-service-role");
+        cliente = new SupabaseAuthAdminClient(builder, URL, "clave-service-role", INVITACION);
     }
 
     @Test
@@ -50,7 +52,9 @@ class SupabaseAuthAdminClientTest {
                 .andExpect(jsonPath("$.app_metadata.es_dueno").value(true))
                 .andExpect(jsonPath("$.user_metadata.nombre").value("Lola"))
                 .andRespond(withSuccess("{\"id\":\"" + ID + "\",\"email\":\"lola@lasirena.es\"}", MediaType.APPLICATION_JSON));
-        servidor.expect(requestTo(URL + "/auth/v1/invite"))
+        servidor.expect(requestTo(org.hamcrest.Matchers.startsWith(URL + "/auth/v1/invite?redirect_to=")))
+                // Va codificada en la query; Supabase la decodifica.
+                .andExpect(queryParam("redirect_to", java.net.URLEncoder.encode(INVITACION, java.nio.charset.StandardCharsets.UTF_8)))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(jsonPath("$.email").value("lola@lasirena.es"))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
@@ -72,7 +76,7 @@ class SupabaseAuthAdminClientTest {
     void siFallaLaInvitacionBorraLaCuenta() {
         servidor.expect(requestTo(URL + "/auth/v1/admin/users"))
                 .andRespond(withSuccess("{\"id\":\"" + ID + "\"}", MediaType.APPLICATION_JSON));
-        servidor.expect(requestTo(URL + "/auth/v1/invite")).andRespond(withServerError());
+        servidor.expect(requestTo(org.hamcrest.Matchers.startsWith(URL + "/auth/v1/invite"))).andRespond(withServerError());
         servidor.expect(requestTo(URL + "/auth/v1/admin/users/" + ID))
                 .andExpect(method(HttpMethod.DELETE))
                 .andRespond(withSuccess());
@@ -98,7 +102,7 @@ class SupabaseAuthAdminClientTest {
 
     @Test
     void sinClaveServiceRoleNoLlama() {
-        SupabaseAuthAdminClient sinClave = new SupabaseAuthAdminClient(RestClient.builder(), URL, "");
+        SupabaseAuthAdminClient sinClave = new SupabaseAuthAdminClient(RestClient.builder(), URL, "", INVITACION);
 
         assertThatThrownBy(() -> sinClave.invitar(LOLA))
                 .isInstanceOf(ServicioExternoException.class)
