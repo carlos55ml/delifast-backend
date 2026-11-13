@@ -11,6 +11,7 @@ implementar los controladores:
 - Todo `/admin/**` exige el rol `ADMINISTRADOR` (claim `user_rol` del JWT de Supabase).
 - Los errores son `ProblemDetail` (ya lo hace `GlobalExceptionHandler`); los 400 llevan `errores`
   con el formato `campo: mensaje`, que la web coloca junto a cada campo del formulario.
-- Falta añadir el 409 (email ya registrado) al `GlobalExceptionHandler`.
+- 401 y 403 los escribe `ProblemDetailSecurityHandler` (filtros de seguridad); 409 y 502 (fallo de
+  Supabase Auth) el `GlobalExceptionHandler`.
 - Para comprobar que la API cumple el contrato, se puede comparar con el que genera springdoc
   (`/v3/api-docs`).

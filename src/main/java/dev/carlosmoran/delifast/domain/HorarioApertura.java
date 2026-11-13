@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 /**
@@ -51,6 +52,21 @@ public class HorarioApertura {
 
     public boolean pasaDeMedianoche() {
         return horaCierre.isBefore(horaApertura);
+    }
+
+    /**
+     * Si el momento cae en esta franja. Una franja que pasa de medianoche (lunes 20:00-00:30)
+     * cubre el final del lunes y el principio del martes.
+     */
+    public boolean incluye(LocalDateTime momento) {
+        DiaSemana diaMomento = DiaSemana.deNumero((short) momento.getDayOfWeek().getValue());
+        LocalTime hora = momento.toLocalTime();
+        if (!pasaDeMedianoche()) {
+            return diaMomento == dia && !hora.isBefore(horaApertura) && hora.isBefore(horaCierre);
+        }
+        DiaSemana siguiente = DiaSemana.deNumero((short) (dia.numero() % 7 + 1));
+        return (diaMomento == dia && !hora.isBefore(horaApertura))
+                || (diaMomento == siguiente && hora.isBefore(horaCierre));
     }
 
     public Long getId() { return id; }

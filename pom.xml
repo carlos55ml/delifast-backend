@@ -19,6 +19,8 @@
     <properties>
         <java.version>21</java.version>
         <springdoc.version>3.1.1</springdoc.version>
+        <!-- Los tests con @Tag("bd") necesitan la base de datos; se activan con -Dgrupos.excluidos=none -->
+        <grupos.excluidos>bd</grupos.excluidos>
     </properties>
 
     <dependencies>
@@ -116,6 +118,13 @@
                             <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${grupos.excluidos}</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>

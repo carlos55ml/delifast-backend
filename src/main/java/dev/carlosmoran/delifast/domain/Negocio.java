@@ -14,6 +14,9 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,6 +60,7 @@ public class Negocio {
     @Column(nullable = false)
     private boolean activo = true;
 
+    @Generated(event = EventType.INSERT)
     @Column(name = "fecha_alta", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime fechaAlta;
 
@@ -77,9 +81,22 @@ public class Negocio {
         this.direccion = direccion;
     }
 
+    /**
+     * Si acepta pedidos en este momento (hora local del negocio): no suspendido, con el
+     * interruptor abierto y dentro de alguna franja de horario. Sin horarios configurados
+     * manda solo el interruptor.
+     */
+    public boolean estaAbierto(LocalDateTime ahora) {
+        if (!activo || !abiertoManual) {
+            return false;
+        }
+        return horarios.isEmpty() || horarios.stream().anyMatch(h -> h.incluye(ahora));
+    }
+
     public Long getId() { return id; }
 
     public Localidad getLocalidad() { return localidad; }
+    public void setLocalidad(Localidad localidad) { this.localidad = localidad; }
 
     public String getNombre() { return nombre; }
     public void setNombre(String nombre) { this.nombre = nombre; }
