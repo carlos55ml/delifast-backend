@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
   title: DeliFast API
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
     entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
     (que lo copia en `docs/api/openapi.yaml` y lo implementa).
 
     Cubre la zona de **administración** (RF-28..RF-31), el **panel del negocio** (pedidos
-    RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18, equipo RF-19, incidencias RF-21) y lo mínimo común (`/me`,
+    RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18, equipo RF-19, incidencias RF-21, estadísticas RF-22) y lo mínimo común (`/me`,
     `/localidades`). El resto del negocio y el repartidor se añadirán aquí cuando se programen.
 
     Convenciones:
@@ -55,6 +55,8 @@ tags:
       repartidor (RF-12, RF-26). El negocio responde (ABIERTA → RESPONDIDA, el cliente ve la
       respuesta) y la marca como resuelta (→ RESUELTA). Quien responde o resuelve queda como
       `responsable_id`.
+  - name: Negocio · Estadísticas
+    description: Cifras del negocio calculadas con consultas SQL en `EstadisticasService` (N06, RF-22).
   - name: Negocio · Pedidos
     description: |
       Panel de pedidos del negocio (N01, N02, N08). Estados: RECIBIDO → EN_PREPARACION (aceptar)
@@ -966,6 +968,37 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problema" }
 
+
+  /negocio/estadisticas:
+    get:
+      tags: [Negocio · Estadísticas]
+      operationId: obtenerEstadisticasNegocio
+      summary: Estadísticas del negocio por día, semana o mes (N06, RF-22)
+      description: |
+        Periodo actual en Europe/Madrid que contiene `fecha` (hoy si no llega): el día, la semana
+        de lunes a domingo o el mes natural. Cuenta los pedidos no rechazados ni cancelados; la
+        facturación suma el total de los ENTREGADO. Cada cifra trae la del periodo anterior para
+        compararla.
+      parameters:
+        - name: periodo
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/Periodo" }
+        - name: fecha
+          in: query
+          required: false
+          description: Un día del periodo que se quiere ver (por defecto, hoy).
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Estadísticas
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EstadisticasNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1512,3 +1545,51 @@ components:
               properties:
                 nombre: { type: string }
                 telefono: { type: string, description: Teléfono de contacto del pedido. }
+
+    Periodo:
+      type: string
+      enum: [DIA, SEMANA, MES]
+
+    EstadisticasNegocio:
+      type: object
+      required: [periodo, desde, hasta, pedidos, pedidosAnterior, facturacion, facturacionAnterior, incidencias, serie, masVendidos]
+      properties:
+        periodo: { $ref: "#/components/schemas/Periodo" }
+        desde: { type: string, format: date, examples: ["2026-11-03"] }
+        hasta: { type: string, format: date, examples: ["2026-11-09"] }
+        pedidos: { type: integer, minimum: 0 }
+        pedidosAnterior: { type: integer, minimum: 0, description: Los del periodo anterior equivalente. }
+        facturacion: { type: number, minimum: 0 }
+        facturacionAnterior: { type: number, minimum: 0 }
+        tiempoMedioEntregaMin:
+          type: [integer, "null"]
+          description: Minutos de media desde que se recibe hasta que se entrega. Nulo si no hubo entregas.
+        tiempoMedioEntregaAnteriorMin: { type: [integer, "null"] }
+        incidencias:
+          type: object
+          required: [total, resueltas, abiertas]
+          properties:
+            total: { type: integer, minimum: 0 }
+            resueltas: { type: integer, minimum: 0 }
+            abiertas: { type: integer, minimum: 0, description: ABIERTA + RESPONDIDA. }
+        serie:
+          type: array
+          description: |
+            Pedidos por tramo para la gráfica: por hora en DIA ("12:00"), por día de la semana en
+            SEMANA ("Lun"…"Dom") y por día del mes en MES ("1"…"31"). Incluye los tramos a cero.
+          items:
+            type: object
+            required: [etiqueta, pedidos]
+            properties:
+              etiqueta: { type: string, examples: [Vie] }
+              pedidos: { type: integer, minimum: 0 }
+        masVendidos:
+          type: array
+          description: Los 5 productos con más unidades vendidas en el periodo.
+          maxItems: 5
+          items:
+            type: object
+            required: [nombre, unidades]
+            properties:
+              nombre: { type: string, examples: [Hamburguesa clásica] }
+              unidades: { type: integer, minimum: 0 }
