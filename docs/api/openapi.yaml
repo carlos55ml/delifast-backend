@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
   title: DeliFast API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
     entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
     (que lo copia en `docs/api/openapi.yaml` y lo implementa).
 
-    Cubre la zona de **administración** (RF-28..RF-31), los **pedidos del negocio**
-    (RF-14..RF-16, RF-20) y lo mínimo común (`/me`, `/localidades`). El resto del negocio y el
-    repartidor se añadirán aquí cuando se programen.
+    Cubre la zona de **administración** (RF-28..RF-31), el **panel del negocio** (pedidos
+    RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18) y lo mínimo común (`/me`,
+    `/localidades`). El resto del negocio y el repartidor se añadirán aquí cuando se programen.
 
     Convenciones:
     - JSON en `camelCase`. Fechas en ISO 8601 con zona (`2026-11-06T13:10:00Z`).
@@ -23,6 +23,10 @@ info:
       400 validación (con `errores`), 401 sin token, 403 rol incorrecto, 404 no existe,
       409 conflicto (p. ej. email ya registrado, o el pedido ya cambió de estado porque otra
       persona del negocio se adelantó), 422 regla de negocio.
+    - Imágenes (arquitectura 5.5): se suben en la misma petición que los datos, como
+      `multipart/form-data` con una parte `datos` (JSON) y otra con el fichero. El backend
+      comprueba el tipo real (JPEG, PNG o WebP) y el tamaño (máx. 2 MB) y la sube a Storage;
+      si no vale responde 400 con el error en `errores`.
     - Las listas de administración son pequeñas (decenas de filas), así que se devuelven
       completas, sin paginar.
 servers:
@@ -34,6 +38,10 @@ tags:
   - name: Perfil
   - name: Localidades
   - name: Administración
+  - name: Negocio · Carta
+    description: Categorías y productos del negocio del token (N03, RF-17).
+  - name: Negocio · Configuración
+    description: Datos, logo, horario y apertura del negocio del token (N07, RF-18).
   - name: Negocio · Pedidos
     description: |
       Panel de pedidos del negocio (N01, N02, N08). Estados: RECIBIDO → EN_PREPARACION (aceptar)
@@ -228,12 +236,9 @@ paths:
 
   /negocio:
     get:
-      tags: [Negocio · Pedidos]
+      tags: [Negocio · Configuración]
       operationId: obtenerMiNegocio
-      summary: Datos del negocio del usuario (cabecera del panel)
-      description: |
-        Negocio del claim `negocio_id`. La configuración completa (horarios, logo, envío y mínimo,
-        RF-18) se añadirá a este recurso con N07.
+      summary: Datos y configuración del negocio del usuario (cabecera del panel y N07)
       responses:
         "200":
           description: Negocio
@@ -242,12 +247,70 @@ paths:
               schema: { $ref: "#/components/schemas/MiNegocio" }
         "401": { $ref: "#/components/responses/NoAutenticado" }
         "403": { $ref: "#/components/responses/Prohibido" }
+    put:
+      tags: [Negocio · Configuración]
+      operationId: editarMiNegocio
+      summary: Guardar los datos del negocio y, opcionalmente, un logo nuevo (N07, RF-18)
+      description: |
+        La localidad no se cambia aquí (la fija el administrador al dar de alta el negocio).
+        Si llega `logo`, sustituye al anterior (el backend borra el viejo de Storage).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [datos]
+              properties:
+                datos: { $ref: "#/components/schemas/DatosMiNegocio" }
+                logo:
+                  type: string
+                  format: binary
+                  description: JPEG, PNG o WebP de hasta 2 MB.
+            encoding:
+              datos: { contentType: application/json }
+      responses:
+        "200":
+          description: Negocio actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MiNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /negocio/horarios:
+    put:
+      tags: [Negocio · Configuración]
+      operationId: editarHorariosNegocio
+      summary: Sustituir el horario de apertura completo (N07, RF-18)
+      description: |
+        Reemplaza todas las franjas del negocio. Un día sin franjas está cerrado. Una franja cuyo
+        cierre es anterior a la apertura pasa de medianoche (20:00–00:30). Las franjas de un mismo
+        día no pueden solaparse.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 21
+              items: { $ref: "#/components/schemas/FranjaHorario" }
+      responses:
+        "200":
+          description: Negocio con el horario nuevo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MiNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
 
   /negocio/abierto:
     patch:
-      tags: [Negocio · Pedidos]
+      tags: [Negocio · Configuración]
       operationId: cambiarAbiertoNegocio
-      summary: Abrir o cerrar el negocio a mano (interruptor "Abierto" de la cabecera, RF-18)
+      summary: Abrir o cerrar el negocio a mano (interruptor "Abierto", RF-18)
       description: |
         Cambia `negocios.abierto_manual`. Con él a false el negocio no acepta pedidos aunque esté
         en horario; con él a true acepta pedidos solo dentro del horario.
@@ -268,6 +331,174 @@ paths:
               schema: { $ref: "#/components/schemas/MiNegocio" }
         "401": { $ref: "#/components/responses/NoAutenticado" }
         "403": { $ref: "#/components/responses/Prohibido" }
+
+  /negocio/carta:
+    get:
+      tags: [Negocio · Carta]
+      operationId: obtenerCartaNegocio
+      summary: Carta completa del negocio (N03)
+      description: Categorías por `orden` con sus productos por nombre, incluidos los agotados. Sin los borrados.
+      responses:
+        "200":
+          description: Carta
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CategoriaCarta" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /negocio/categorias:
+    post:
+      tags: [Negocio · Carta]
+      operationId: crearCategoria
+      summary: Nueva categoría (se añade al final)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DatosCategoria" }
+      responses:
+        "201":
+          description: Categoría creada (sin productos)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoriaCarta" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "409":
+          description: Ya hay una categoría con ese nombre en el negocio
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+
+  /negocio/categorias/{id}:
+    parameters:
+      - $ref: "#/components/parameters/CategoriaId"
+    put:
+      tags: [Negocio · Carta]
+      operationId: editarCategoria
+      summary: Renombrar una categoría
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DatosCategoria" }
+      responses:
+        "200":
+          description: Categoría actualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoriaCarta" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409":
+          description: Ya hay una categoría con ese nombre en el negocio
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+    delete:
+      tags: [Negocio · Carta]
+      operationId: borrarCategoria
+      summary: Borrar una categoría vacía
+      responses:
+        "204": { description: Borrada }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409":
+          description: La categoría aún tiene productos; hay que borrarlos o moverlos antes
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+
+  /negocio/productos:
+    post:
+      tags: [Negocio · Carta]
+      operationId: crearProducto
+      summary: Nuevo producto con foto opcional (N03, RF-17)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/FormularioProducto" }
+            encoding:
+              datos: { contentType: application/json }
+      responses:
+        "201":
+          description: Producto creado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductoCarta" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /negocio/productos/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProductoId"
+    put:
+      tags: [Negocio · Carta]
+      operationId: editarProducto
+      summary: Editar un producto (y cambiar o quitar su foto)
+      description: Sin `foto` se conserva la actual, salvo que `datos.quitarFoto` sea true.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/FormularioProducto" }
+            encoding:
+              datos: { contentType: application/json }
+      responses:
+        "200":
+          description: Producto actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductoCarta" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+    delete:
+      tags: [Negocio · Carta]
+      operationId: borrarProducto
+      summary: Borrar un producto
+      description: Borrado lógico (`activo = false`) para no romper los pedidos antiguos. La foto se borra de Storage.
+      responses:
+        "204": { description: Borrado }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /negocio/productos/{id}/disponible:
+    parameters:
+      - $ref: "#/components/parameters/ProductoId"
+    patch:
+      tags: [Negocio · Carta]
+      operationId: cambiarDisponibleProducto
+      summary: Marcar un producto como disponible o agotado (interruptor de N03)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disponible]
+              properties:
+                disponible: { type: boolean }
+      responses:
+        "200":
+          description: Producto actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductoCarta" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
 
   /negocio/pedidos:
     get:
@@ -474,6 +705,16 @@ components:
       required: true
       schema: { type: integer, format: int64 }
     PedidoId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    CategoriaId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    ProductoId:
       name: id
       in: path
       required: true
@@ -694,11 +935,23 @@ components:
 
     MiNegocio:
       type: object
-      required: [id, nombre, localidad, abierto, abiertoManual, pedidosHoy]
+      required: [id, nombre, localidad, direccion, telefono, gastosEnvio, pedidoMinimo, horarios, abierto, abiertoManual, pedidosHoy]
       properties:
         id: { type: integer, format: int64 }
         nombre: { type: string, examples: [Hamburguesería Pepe] }
+        descripcion: { type: [string, "null"] }
         localidad: { $ref: "#/components/schemas/Localidad" }
+        direccion: { type: string, examples: [C/ Sevilla 24] }
+        telefono: { type: string, examples: [955 820 123] }
+        logoUrl:
+          type: [string, "null"]
+          description: URL pública del logo en Supabase Storage (bucket `logos`).
+        gastosEnvio: { type: number, minimum: 0, examples: [1.5] }
+        pedidoMinimo: { type: number, minimum: 0, examples: [10] }
+        horarios:
+          type: array
+          description: Franjas de apertura, por día y hora de apertura.
+          items: { $ref: "#/components/schemas/FranjaHorario" }
         abierto:
           type: boolean
           description: Si ahora mismo acepta pedidos (en horario y con `abiertoManual`).
@@ -709,6 +962,89 @@ components:
           type: integer
           minimum: 0
           description: Pedidos recibidos hoy (Europe/Madrid), en cualquier estado salvo CANCELADO.
+
+    DatosMiNegocio:
+      type: object
+      required: [nombre, telefono, direccion, gastosEnvio, pedidoMinimo]
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 100 }
+        descripcion: { type: [string, "null"], maxLength: 300 }
+        telefono: { type: string, minLength: 9, maxLength: 20 }
+        direccion: { type: string, minLength: 1, maxLength: 200 }
+        gastosEnvio: { type: number, minimum: 0, maximum: 50 }
+        pedidoMinimo: { type: number, minimum: 0, maximum: 200 }
+
+    FranjaHorario:
+      type: object
+      required: [dia, apertura, cierre]
+      properties:
+        dia:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: 1 = lunes … 7 = domingo.
+        apertura: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", examples: ["12:30"] }
+        cierre:
+          type: string
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d$"
+          description: Distinta de la apertura. Si es anterior, la franja pasa de medianoche.
+          examples: ["16:00"]
+
+    DatosCategoria:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 60, examples: [Hamburguesas] }
+
+    CategoriaCarta:
+      type: object
+      required: [id, nombre, orden, productos]
+      properties:
+        id: { type: integer, format: int64 }
+        nombre: { type: string }
+        orden: { type: integer }
+        productos:
+          type: array
+          items: { $ref: "#/components/schemas/ProductoCarta" }
+
+    ProductoCarta:
+      type: object
+      required: [id, categoriaId, nombre, precio, disponible]
+      properties:
+        id: { type: integer, format: int64 }
+        categoriaId: { type: integer, format: int64 }
+        nombre: { type: string, examples: [Hamburguesa clásica] }
+        descripcion: { type: [string, "null"], examples: [Ternera, queso, lechuga y tomate] }
+        precio: { type: number, minimum: 0, examples: [6.5] }
+        fotoUrl:
+          type: [string, "null"]
+          description: URL pública de la foto en Supabase Storage (bucket `productos`).
+        disponible:
+          type: boolean
+          description: false = agotado; la app lo muestra pero no deja pedirlo (RF-06).
+
+    DatosProducto:
+      type: object
+      required: [categoriaId, nombre, precio, disponible]
+      properties:
+        categoriaId: { type: integer, format: int64 }
+        nombre: { type: string, minLength: 1, maxLength: 100 }
+        descripcion: { type: [string, "null"], maxLength: 300 }
+        precio: { type: number, minimum: 0, maximum: 999.99 }
+        disponible: { type: boolean }
+        quitarFoto:
+          type: boolean
+          description: Solo al editar. true borra la foto actual (si no llega una nueva).
+
+    FormularioProducto:
+      type: object
+      required: [datos]
+      properties:
+        datos: { $ref: "#/components/schemas/DatosProducto" }
+        foto:
+          type: string
+          format: binary
+          description: JPEG, PNG o WebP de hasta 2 MB.
 
     LineaPedido:
       type: object
