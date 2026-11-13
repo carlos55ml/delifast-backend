@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
   title: DeliFast API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
     entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
     (que lo copia en `docs/api/openapi.yaml` y lo implementa).
 
     Cubre la zona de **administración** (RF-28..RF-31), el **panel del negocio** (pedidos
-    RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18) y lo mínimo común (`/me`,
+    RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18, equipo RF-19) y lo mínimo común (`/me`,
     `/localidades`). El resto del negocio y el repartidor se añadirán aquí cuando se programen.
 
     Convenciones:
@@ -42,6 +42,13 @@ tags:
     description: Categorías y productos del negocio del token (N03, RF-17).
   - name: Negocio · Configuración
     description: Datos, logo, horario y apertura del negocio del token (N07, RF-18).
+  - name: Negocio · Equipo
+    description: |
+      Empleados y repartidores del negocio (N04, RF-19). Cualquier persona del negocio los ve,
+      edita y activa o desactiva; **solo el dueño** (`es_dueno` en el token) crea cuentas nuevas:
+      el resto recibe 403. El alta crea la cuenta en Supabase Auth con la Admin API
+      (`inviteUserByEmail`, `app_metadata` = `{rol, negocio_id}`) y la persona recibe un email para
+      crear su contraseña. Desactivar una cuenta cierra sus sesiones (arquitectura 5.1).
   - name: Negocio · Pedidos
     description: |
       Panel de pedidos del negocio (N01, N02, N08). Estados: RECIBIDO → EN_PREPARACION (aceptar)
@@ -337,7 +344,7 @@ paths:
       tags: [Negocio · Carta]
       operationId: obtenerCartaNegocio
       summary: Carta completa del negocio (N03)
-      description: Categorías por `orden` con sus productos por nombre, incluidos los agotados. Sin los borrados.
+      description: Categorías por `orden` con sus productos en el orden en que se crearon (id), incluidos los agotados. Sin los borrados.
       responses:
         "200":
           description: Carta
@@ -668,16 +675,16 @@ paths:
 
   /negocio/repartidores:
     get:
-      tags: [Negocio · Pedidos]
+      tags: [Negocio · Equipo]
       operationId: listarRepartidoresNegocio
-      summary: Repartidores del negocio (selector de N08; gestión completa en N04, RF-19)
+      summary: Repartidores del negocio (N04 y selector de N08)
       parameters:
         - name: disponible
           in: query
           required: false
           description: |
-            `true` = solo activos y disponibles (los que se pueden asignar). Sin él, todos los del
-            negocio, también los desactivados.
+            `true` = solo activos y disponibles (los que se pueden asignar, N08). Sin él, todos los
+            del negocio, también los desactivados.
           schema: { type: boolean }
       responses:
         "200":
@@ -689,6 +696,176 @@ paths:
                 items: { $ref: "#/components/schemas/RepartidorNegocio" }
         "401": { $ref: "#/components/responses/NoAutenticado" }
         "403": { $ref: "#/components/responses/Prohibido" }
+    post:
+      tags: [Negocio · Equipo]
+      operationId: altaRepartidor
+      summary: Crear la cuenta de un repartidor (solo el dueño, RF-19)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AltaMiembro" }
+      responses:
+        "201":
+          description: Repartidor creado; recibe un email para crear su contraseña
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RepartidorNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403":
+          description: No es el dueño del negocio
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+        "409": { $ref: "#/components/responses/EmailRegistrado" }
+
+  /negocio/repartidores/{id}:
+    parameters:
+      - $ref: "#/components/parameters/UsuarioId"
+    put:
+      tags: [Negocio · Equipo]
+      operationId: editarRepartidor
+      summary: Corregir el nombre o el teléfono de un repartidor
+      description: El email no se cambia (es el de su cuenta).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DatosMiembro" }
+      responses:
+        "200":
+          description: Repartidor actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RepartidorNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /negocio/repartidores/{id}/activo:
+    parameters:
+      - $ref: "#/components/parameters/UsuarioId"
+    patch:
+      tags: [Negocio · Equipo]
+      operationId: cambiarActivoRepartidor
+      summary: Activar o desactivar un repartidor (RF-19)
+      description: |
+        Desactivado no puede iniciar sesión, no aparece en el selector de N08 y se le cierran las
+        sesiones. Sus repartos EN_REPARTO siguen asignados a él.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [activo]
+              properties:
+                activo: { type: boolean }
+      responses:
+        "200":
+          description: Repartidor actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RepartidorNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /negocio/empleados:
+    get:
+      tags: [Negocio · Equipo]
+      operationId: listarEmpleadosNegocio
+      summary: Personas del negocio (dueño y empleados, N04)
+      responses:
+        "200":
+          description: El dueño primero y luego los empleados por nombre
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmpleadoNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    post:
+      tags: [Negocio · Equipo]
+      operationId: altaEmpleado
+      summary: Crear la cuenta de un empleado (solo el dueño, RF-19 ampliado)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AltaMiembro" }
+      responses:
+        "201":
+          description: Empleado creado; recibe un email para crear su contraseña
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmpleadoNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403":
+          description: No es el dueño del negocio
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+        "409": { $ref: "#/components/responses/EmailRegistrado" }
+
+  /negocio/empleados/{id}:
+    parameters:
+      - $ref: "#/components/parameters/UsuarioId"
+    put:
+      tags: [Negocio · Equipo]
+      operationId: editarEmpleado
+      summary: Corregir el nombre o el teléfono de un empleado (o del dueño)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DatosMiembro" }
+      responses:
+        "200":
+          description: Empleado actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmpleadoNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /negocio/empleados/{id}/activo:
+    parameters:
+      - $ref: "#/components/parameters/UsuarioId"
+    patch:
+      tags: [Negocio · Equipo]
+      operationId: cambiarActivoEmpleado
+      summary: Activar o desactivar un empleado
+      description: El dueño está siempre activo (422 si se intenta desactivar).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [activo]
+              properties:
+                activo: { type: boolean }
+      responses:
+        "200":
+          description: Empleado actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmpleadoNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "422":
+          description: No se puede desactivar al dueño
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
 
 components:
   securitySchemes:
@@ -719,6 +896,12 @@ components:
       in: path
       required: true
       schema: { type: integer, format: int64 }
+    UsuarioId:
+      name: id
+      in: path
+      required: true
+      description: Id de la cuenta (el de `auth.users` y `perfiles`).
+      schema: { type: string, format: uuid }
 
   responses:
     Validacion:
@@ -738,6 +921,11 @@ components:
           schema: { $ref: "#/components/schemas/Problema" }
     NoEncontrado:
       description: El recurso no existe
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problema" }
+    EmailRegistrado:
+      description: Ya existe una cuenta con ese email
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problema" }
@@ -1139,12 +1327,12 @@ components:
 
     RepartidorNegocio:
       type: object
-      required: [id, nombre, email, activo, disponible, pedidosEnReparto]
+      required: [id, nombre, email, activo, disponible, pedidosEnReparto, repartosHoy]
       properties:
         id: { type: string, format: uuid }
         nombre: { type: string, examples: [Marta Díaz] }
         email: { type: string, format: email }
-        telefono: { type: [string, "null"] }
+        telefono: { type: [string, "null"], examples: [655 333 444] }
         activo:
           type: boolean
           description: false = desactivado por el negocio; no puede iniciar sesión.
@@ -1155,3 +1343,35 @@ components:
           type: integer
           minimum: 0
           description: Repartos suyos que siguen EN_REPARTO.
+        repartosHoy:
+          type: integer
+          minimum: 0
+          description: Repartos asignados hoy (Europe/Madrid), entregados o no.
+
+    EmpleadoNegocio:
+      type: object
+      required: [id, nombre, email, esDueno, activo]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string, examples: [Ana Moreno] }
+        email: { type: string, format: email }
+        telefono: { type: [string, "null"] }
+        esDueno: { type: boolean }
+        activo:
+          type: boolean
+          description: El dueño siempre está activo.
+
+    DatosMiembro:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 100 }
+        telefono: { type: [string, "null"], maxLength: 20 }
+
+    AltaMiembro:
+      allOf:
+        - $ref: "#/components/schemas/DatosMiembro"
+        - type: object
+          required: [email]
+          properties:
+            email: { type: string, format: email }
