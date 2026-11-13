@@ -1,23 +1,28 @@
 openapi: 3.1.0
 info:
   title: DeliFast API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
     entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
     (que lo copia en `docs/api/openapi.yaml` y lo implementa).
 
-    Por ahora cubre la zona de **administración** (RF-28..RF-31) y lo mínimo común
-    (`/me`, `/localidades`). Negocio y repartidor se añadirán aquí cuando se programen.
+    Cubre la zona de **administración** (RF-28..RF-31), los **pedidos del negocio**
+    (RF-14..RF-16, RF-20) y lo mínimo común (`/me`, `/localidades`). El resto del negocio y el
+    repartidor se añadirán aquí cuando se programen.
 
     Convenciones:
     - JSON en `camelCase`. Fechas en ISO 8601 con zona (`2026-11-06T13:10:00Z`).
       Importes como número con 2 decimales.
     - Autenticación: `Authorization: Bearer <JWT de Supabase>`. El rol va en el claim
       `user_rol` (añadido por `custom_access_token_hook`). Todo `/admin/**` exige `ADMINISTRADOR`.
+      Todo `/negocio/**` y las acciones del negocio sobre `/pedidos/{id}/...` exigen `NEGOCIO`
+      (dueño o empleado, sin más restricciones en la v1) y solo actúan sobre el negocio del
+      claim `negocio_id`: un pedido de otro negocio responde 404, no 403.
     - Errores con `application/problem+json` (RFC 9457), como ya hace `GlobalExceptionHandler`:
       400 validación (con `errores`), 401 sin token, 403 rol incorrecto, 404 no existe,
-      409 conflicto (p. ej. email ya registrado), 422 regla de negocio.
+      409 conflicto (p. ej. email ya registrado, o el pedido ya cambió de estado porque otra
+      persona del negocio se adelantó), 422 regla de negocio.
     - Las listas de administración son pequeñas (decenas de filas), así que se devuelven
       completas, sin paginar.
 servers:
@@ -29,6 +34,15 @@ tags:
   - name: Perfil
   - name: Localidades
   - name: Administración
+  - name: Negocio · Pedidos
+    description: |
+      Panel de pedidos del negocio (N01, N02, N08). Estados: RECIBIDO → EN_PREPARACION (aceptar)
+      → LISTO → EN_REPARTO (asignar repartidor) → ENTREGADO (lo confirma el repartidor).
+      RECIBIDO → RECHAZADO (rechazar). Cada cambio guarda una fila en `cambios_estado`.
+
+      Tiempo real: la web no recibe los pedidos por la API sino por Supabase Realtime
+      (`postgres_changes` sobre `public.pedidos` con `negocio_id=eq.<id>`, filtrado además por RLS).
+      Al recibir un cambio vuelve a pedir `GET /negocio/pedidos`.
 paths:
   /me:
     get:
@@ -212,6 +226,239 @@ paths:
         "401": { $ref: "#/components/responses/NoAutenticado" }
         "403": { $ref: "#/components/responses/Prohibido" }
 
+  /negocio:
+    get:
+      tags: [Negocio · Pedidos]
+      operationId: obtenerMiNegocio
+      summary: Datos del negocio del usuario (cabecera del panel)
+      description: |
+        Negocio del claim `negocio_id`. La configuración completa (horarios, logo, envío y mínimo,
+        RF-18) se añadirá a este recurso con N07.
+      responses:
+        "200":
+          description: Negocio
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MiNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /negocio/abierto:
+    patch:
+      tags: [Negocio · Pedidos]
+      operationId: cambiarAbiertoNegocio
+      summary: Abrir o cerrar el negocio a mano (interruptor "Abierto" de la cabecera, RF-18)
+      description: |
+        Cambia `negocios.abierto_manual`. Con él a false el negocio no acepta pedidos aunque esté
+        en horario; con él a true acepta pedidos solo dentro del horario.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [abierto]
+              properties:
+                abierto: { type: boolean }
+      responses:
+        "200":
+          description: Negocio actualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MiNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /negocio/pedidos:
+    get:
+      tags: [Negocio · Pedidos]
+      operationId: listarPedidosNegocio
+      summary: Pedidos del negocio (tablero N01, RF-14)
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          description: |
+            Uno o varios estados (`?estado=RECIBIDO&estado=LISTO`). Sin él, los activos:
+            RECIBIDO, EN_PREPARACION, LISTO y EN_REPARTO (las cuatro columnas del tablero).
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/EstadoPedido" }
+      responses:
+        "200":
+          description: Pedidos, del más antiguo al más reciente
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PedidoNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /negocio/pedidos/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PedidoId"
+    get:
+      tags: [Negocio · Pedidos]
+      operationId: obtenerPedidoNegocio
+      summary: Detalle de un pedido con su historial de estados (N02, RF-16)
+      responses:
+        "200":
+          description: Pedido
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PedidoNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  /pedidos/{id}/aceptar:
+    parameters:
+      - $ref: "#/components/parameters/PedidoId"
+    post:
+      tags: [Negocio · Pedidos]
+      operationId: aceptarPedido
+      summary: Aceptar un pedido con tiempo estimado (RECIBIDO → EN_PREPARACION, RF-15)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tiempoEstimadoMin]
+              properties:
+                tiempoEstimadoMin:
+                  type: integer
+                  minimum: 5
+                  maximum: 120
+                  description: Minutos hasta la entrega que verá el cliente. La web ofrece 15, 25, 35 y 45.
+                  examples: [25]
+      responses:
+        "200":
+          description: Pedido aceptado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PedidoNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409": { $ref: "#/components/responses/EstadoCambiado" }
+
+  /pedidos/{id}/rechazar:
+    parameters:
+      - $ref: "#/components/parameters/PedidoId"
+    post:
+      tags: [Negocio · Pedidos]
+      operationId: rechazarPedido
+      summary: Rechazar un pedido con motivo (RECIBIDO → RECHAZADO, RF-15)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo:
+                  type: string
+                  minLength: 1
+                  maxLength: 300
+                  description: Lo ve el cliente en la app.
+                  examples: [Nos hemos quedado sin pan de hamburguesa.]
+      responses:
+        "200":
+          description: Pedido rechazado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PedidoNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409": { $ref: "#/components/responses/EstadoCambiado" }
+
+  /pedidos/{id}/listo:
+    parameters:
+      - $ref: "#/components/parameters/PedidoId"
+    post:
+      tags: [Negocio · Pedidos]
+      operationId: marcarPedidoListo
+      summary: Marcar como listo (EN_PREPARACION → LISTO, RF-16)
+      responses:
+        "200":
+          description: Pedido listo para asignar
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PedidoNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409": { $ref: "#/components/responses/EstadoCambiado" }
+
+  /pedidos/{id}/asignar:
+    parameters:
+      - $ref: "#/components/parameters/PedidoId"
+    post:
+      tags: [Negocio · Pedidos]
+      operationId: asignarRepartidor
+      summary: Asignar un repartidor a un pedido listo (LISTO → EN_REPARTO, N08, RF-20)
+      description: |
+        En una transacción con bloqueo del pedido (arquitectura 5.4): comprueba que el repartidor es
+        del negocio, está activo y disponible, crea el reparto y pasa el pedido a EN_REPARTO.
+        Si dos personas del negocio lo asignan a la vez, la segunda recibe 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [repartidorId]
+              properties:
+                repartidorId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Pedido en reparto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PedidoNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409": { $ref: "#/components/responses/EstadoCambiado" }
+        "422":
+          description: El repartidor no es del negocio, está desactivado o no está disponible
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+
+  /negocio/repartidores:
+    get:
+      tags: [Negocio · Pedidos]
+      operationId: listarRepartidoresNegocio
+      summary: Repartidores del negocio (selector de N08; gestión completa en N04, RF-19)
+      parameters:
+        - name: disponible
+          in: query
+          required: false
+          description: |
+            `true` = solo activos y disponibles (los que se pueden asignar). Sin él, todos los del
+            negocio, también los desactivados.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Repartidores ordenados por nombre
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RepartidorNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -222,6 +469,11 @@ components:
 
   parameters:
     NegocioId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    PedidoId:
       name: id
       in: path
       required: true
@@ -248,6 +500,13 @@ components:
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problema" }
+    EstadoCambiado:
+      description: |
+        El pedido ya no está en el estado que exige la acción (otra persona del negocio se adelantó,
+        o el cliente lo canceló). La web vuelve a cargar el tablero.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problema" }
 
   schemas:
     Rol:
@@ -265,6 +524,15 @@ components:
     OrigenIncidencia:
       type: string
       enum: [CLIENTE, REPARTIDOR]
+
+    EstadoPedido:
+      type: string
+      enum: [RECIBIDO, EN_PREPARACION, LISTO, EN_REPARTO, ENTREGADO, RECHAZADO, CANCELADO]
+
+    MetodoPago:
+      type: string
+      description: Siempre se paga al repartidor en la entrega, en efectivo o con tarjeta (datáfono).
+      enum: [EFECTIVO, TARJETA]
 
     Problema:
       type: object
@@ -423,3 +691,131 @@ components:
           type: array
           description: Las 5 últimas incidencias sin resolver.
           items: { $ref: "#/components/schemas/IncidenciaAdmin" }
+
+    MiNegocio:
+      type: object
+      required: [id, nombre, localidad, abierto, abiertoManual, pedidosHoy]
+      properties:
+        id: { type: integer, format: int64 }
+        nombre: { type: string, examples: [Hamburguesería Pepe] }
+        localidad: { $ref: "#/components/schemas/Localidad" }
+        abierto:
+          type: boolean
+          description: Si ahora mismo acepta pedidos (en horario y con `abiertoManual`).
+        abiertoManual:
+          type: boolean
+          description: Interruptor "Abierto" de la cabecera.
+        pedidosHoy:
+          type: integer
+          minimum: 0
+          description: Pedidos recibidos hoy (Europe/Madrid), en cualquier estado salvo CANCELADO.
+
+    LineaPedido:
+      type: object
+      required: [nombreProducto, precioUnitario, cantidad, importe]
+      properties:
+        nombreProducto: { type: string, description: Copia del nombre al hacer el pedido., examples: [Menú DeliFast] }
+        precioUnitario: { type: number, examples: [8.5] }
+        cantidad: { type: integer, minimum: 1 }
+        importe: { type: number, description: precioUnitario × cantidad. }
+
+    CambioEstado:
+      type: object
+      required: [estadoNuevo, fecha]
+      properties:
+        estadoAnterior:
+          description: Nulo en el primer registro (creación del pedido).
+          oneOf:
+            - $ref: "#/components/schemas/EstadoPedido"
+            - type: "null"
+        estadoNuevo: { $ref: "#/components/schemas/EstadoPedido" }
+        fecha: { type: string, format: date-time }
+        autor:
+          type: [string, "null"]
+          description: Nombre de quien hizo el cambio (cliente, persona del negocio o repartidor).
+
+    RepartoPedido:
+      type: object
+      required: [id, repartidor, fechaAsignacion]
+      properties:
+        id: { type: integer, format: int64 }
+        repartidor:
+          type: object
+          required: [id, nombre]
+          properties:
+            id: { type: string, format: uuid }
+            nombre: { type: string }
+        fechaAsignacion: { type: string, format: date-time }
+        fechaEntrega: { type: [string, "null"], format: date-time }
+
+    PedidoNegocio:
+      type: object
+      required:
+        - id
+        - codigo
+        - estado
+        - fechaCreacion
+        - cliente
+        - direccionEntrega
+        - telefonoContacto
+        - metodoPago
+        - lineas
+        - subtotal
+        - gastosEnvio
+        - total
+        - historial
+      properties:
+        id: { type: integer, format: int64 }
+        codigo: { type: string, examples: [DF-001043] }
+        estado: { $ref: "#/components/schemas/EstadoPedido" }
+        fechaCreacion: { type: string, format: date-time }
+        cliente:
+          type: object
+          required: [nombre]
+          properties:
+            nombre: { type: string, examples: [Antonio Pérez] }
+        direccionEntrega:
+          type: string
+          description: Copia de la dirección al hacer el pedido, con la localidad.
+          examples: [Av. de la Constitución 8, 1º A · Osuna]
+        telefonoContacto: { type: string, examples: [612 345 678] }
+        metodoPago: { $ref: "#/components/schemas/MetodoPago" }
+        nota: { type: [string, "null"], examples: [Sin cebolla en el menú, por favor.] }
+        lineas:
+          type: array
+          items: { $ref: "#/components/schemas/LineaPedido" }
+        subtotal: { type: number }
+        gastosEnvio: { type: number }
+        total: { type: number }
+        tiempoEstimadoMin:
+          type: [integer, "null"]
+          description: Se fija al aceptar.
+        motivoRechazo: { type: [string, "null"] }
+        reparto:
+          description: Solo desde EN_REPARTO.
+          oneOf:
+            - $ref: "#/components/schemas/RepartoPedido"
+            - type: "null"
+        historial:
+          type: array
+          description: Cambios de estado, del más antiguo al más reciente (RF-16).
+          items: { $ref: "#/components/schemas/CambioEstado" }
+
+    RepartidorNegocio:
+      type: object
+      required: [id, nombre, email, activo, disponible, pedidosEnReparto]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string, examples: [Marta Díaz] }
+        email: { type: string, format: email }
+        telefono: { type: [string, "null"] }
+        activo:
+          type: boolean
+          description: false = desactivado por el negocio; no puede iniciar sesión.
+        disponible:
+          type: boolean
+          description: Lo marca el propio repartidor desde su perfil (R06).
+        pedidosEnReparto:
+          type: integer
+          minimum: 0
+          description: Repartos suyos que siguen EN_REPARTO.
