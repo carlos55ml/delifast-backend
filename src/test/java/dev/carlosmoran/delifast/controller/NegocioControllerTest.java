@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,6 +20,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import dev.carlosmoran.delifast.domain.EstadoPedido;
 import dev.carlosmoran.delifast.domain.MetodoPago;
 import dev.carlosmoran.delifast.dto.LocalidadResponse;
+import dev.carlosmoran.delifast.dto.negocio.DatosMiNegocioRequest;
+import dev.carlosmoran.delifast.dto.negocio.FranjaHorarioDto;
 import dev.carlosmoran.delifast.dto.negocio.MiNegocioResponse;
 import dev.carlosmoran.delifast.dto.negocio.PedidoNegocioResponse;
 import dev.carlosmoran.delifast.exception.ConflictoException;
@@ -34,7 +38,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -55,6 +61,13 @@ class NegocioControllerTest {
             List.of(new PedidoNegocioResponse.Cambio(null, EstadoPedido.RECIBIDO, OffsetDateTime.parse("2026-11-13T12:00:00Z"), "Antonio Pérez"),
                     new PedidoNegocioResponse.Cambio(EstadoPedido.RECIBIDO, EstadoPedido.EN_PREPARACION, OffsetDateTime.parse("2026-11-13T12:02:00Z"), "Lola")));
 
+    private static MiNegocioResponse miNegocio(boolean abierto, long pedidosHoy) {
+        return new MiNegocioResponse(7L, "La Sirena", null, new LocalidadResponse(1L, "Osuna", "Sevilla"),
+                "C/ San Pedro 5", "955821456", "https://x.supabase.co/storage/v1/object/public/logos/7/a.png",
+                new BigDecimal("1.50"), new BigDecimal("10.00"),
+                List.of(new FranjaHorarioDto(1, "20:00", "00:30")), abierto, abierto, pedidosHoy);
+    }
+
     @Autowired
     MockMvc mvc;
 
@@ -66,13 +79,70 @@ class NegocioControllerTest {
 
     @Test
     void cabeceraDelNegocioDelToken() throws Exception {
-        when(miNegocio.obtener(GESTOR)).thenReturn(new MiNegocioResponse(7L, "La Sirena",
-                new LocalidadResponse(1L, "Osuna", "Sevilla"), true, true, 12));
+        when(miNegocio.obtener(GESTOR)).thenReturn(miNegocio(true, 12));
 
         mvc.perform(get("/negocio").with(gestor(7)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.abiertoManual").value(true))
-                .andExpect(jsonPath("$.pedidosHoy").value(12));
+                .andExpect(jsonPath("$.pedidosHoy").value(12))
+                .andExpect(jsonPath("$.gastosEnvio").value(1.5))
+                .andExpect(jsonPath("$.horarios[0].cierre").value("00:30"))
+                .andExpect(jsonPath("$.descripcion").isEmpty());
+    }
+
+    @Test
+    void editarConLogoEnMultipart() throws Exception {
+        MockMultipartFile datos = new MockMultipartFile("datos", "", MediaType.APPLICATION_JSON_VALUE, """
+                {"nombre":"La Sirena","telefono":"955821456","direccion":"C/ San Pedro 5",
+                 "gastosEnvio":1.5,"pedidoMinimo":10}""".getBytes());
+        MockMultipartFile logo = new MockMultipartFile("logo", "logo.png", "image/png", new byte[] {1, 2});
+        when(miNegocio.editar(eq(GESTOR), any(), any())).thenReturn(miNegocio(true, 0));
+
+        mvc.perform(multipart(HttpMethod.PUT, "/negocio").file(datos).file(logo).with(gestor(7)))
+                .andExpect(status().isOk());
+        verify(miNegocio).editar(eq(GESTOR), eq(new DatosMiNegocioRequest("La Sirena", null, "955821456",
+                "C/ San Pedro 5", new BigDecimal("1.5"), new BigDecimal("10"))), eq(logo));
+    }
+
+    @Test
+    void editarValidaLaParteDatos() throws Exception {
+        MockMultipartFile datos = new MockMultipartFile("datos", "", MediaType.APPLICATION_JSON_VALUE, """
+                {"nombre":"La Sirena","telefono":"955821456","direccion":"C/ San Pedro 5",
+                 "gastosEnvio":60,"pedidoMinimo":10}""".getBytes());
+
+        mvc.perform(multipart(HttpMethod.PUT, "/negocio").file(datos).with(gestor(7)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0]").value(org.hamcrest.Matchers.startsWith("gastosEnvio: ")));
+        verifyNoInteractions(miNegocio);
+    }
+
+    @Test
+    void editarSinParteDatosDevuelve400() throws Exception {
+        mvc.perform(multipart(HttpMethod.PUT, "/negocio").with(gestor(7)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores[0]").value("datos: es obligatorio"));
+    }
+
+    @Test
+    void horariosValidaCadaFranja() throws Exception {
+        mvc.perform(put("/negocio/horarios").with(gestor(7)).contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"dia\":1,\"apertura\":\"12:00\",\"cierre\":\"16:00\"},"
+                                + "{\"dia\":8,\"apertura\":\"25:00\",\"cierre\":\"16:00\"}]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errores.length()").value(2))
+                .andExpect(jsonPath("$.errores[?(@ =~ /horarios\\[1\\]\\.dia: .*/)]").exists())
+                .andExpect(jsonPath("$.errores[?(@ =~ /horarios\\[1\\]\\.apertura: .*/)]").exists());
+        verifyNoInteractions(miNegocio);
+    }
+
+    @Test
+    void horarios() throws Exception {
+        List<FranjaHorarioDto> franjas = List.of(new FranjaHorarioDto(1, "20:00", "00:30"));
+        when(miNegocio.cambiarHorarios(GESTOR, franjas)).thenReturn(miNegocio(true, 0));
+
+        mvc.perform(put("/negocio/horarios").with(gestor(7)).contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"dia\":1,\"apertura\":\"20:00\",\"cierre\":\"00:30\"}]"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -86,8 +156,7 @@ class NegocioControllerTest {
 
     @Test
     void interruptorAbierto() throws Exception {
-        when(miNegocio.cambiarAbierto(GESTOR, false)).thenReturn(new MiNegocioResponse(7L, "La Sirena",
-                new LocalidadResponse(1L, "Osuna", "Sevilla"), false, false, 0));
+        when(miNegocio.cambiarAbierto(GESTOR, false)).thenReturn(miNegocio(false, 0));
 
         mvc.perform(patch("/negocio/abierto").with(gestor(7)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"abierto\":false}"))

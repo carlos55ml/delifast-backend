@@ -6,10 +6,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
+import java.util.ArrayList;
 import java.util.List;
+import org.springframework.validation.FieldError;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -55,6 +60,51 @@ public class GlobalExceptionHandler {
     ProblemDetail tipoIncorrecto(MethodArgumentTypeMismatchException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Datos de entrada no válidos");
         problem.setProperty("errores", List.of(ex.getName() + ": valor no válido"));
+        return problem;
+    }
+
+    /**
+     * Validación de parámetros que no son un objeto (por ejemplo el array de PUT /negocio/horarios).
+     * Cada error sale como "campo[i].propiedad: mensaje".
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    ProblemDetail validacionMetodo(HandlerMethodValidationException ex) {
+        List<String> errores = new ArrayList<>();
+        ex.getParameterValidationResults().forEach(resultado -> resultado.getResolvableErrors().forEach(error -> {
+            StringBuilder nombre = new StringBuilder(resultado.getMethodParameter().getParameterName());
+            if (resultado.getContainerIndex() != null) {
+                nombre.append('[').append(resultado.getContainerIndex()).append(']');
+            }
+            if (error instanceof FieldError fe) {
+                nombre.append('.').append(fe.getField());
+            }
+            errores.add(nombre + ": " + error.getDefaultMessage());
+        }));
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Datos de entrada no válidos");
+        problem.setProperty("errores", errores);
+        return problem;
+    }
+
+    @ExceptionHandler(ValidacionException.class)
+    ProblemDetail validacionServicio(ValidacionException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setProperty("errores", ex.getErrores());
+        return problem;
+    }
+
+    /** Fichero por encima de spring.servlet.multipart.max-file-size (2 MB). */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ProblemDetail ficheroGrande(MaxUploadSizeExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Datos de entrada no válidos");
+        problem.setProperty("errores", List.of("imagen: no puede superar 2 MB"));
+        return problem;
+    }
+
+    /** Falta la parte "datos" de un multipart. */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    ProblemDetail faltaParte(MissingServletRequestPartException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Datos de entrada no válidos");
+        problem.setProperty("errores", List.of(ex.getRequestPartName() + ": es obligatorio"));
         return problem;
     }
 
