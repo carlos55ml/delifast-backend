@@ -250,6 +250,37 @@ create trigger al_crear_usuario
     after insert on auth.users
     for each row execute function public.crear_perfil();
 
+-- La Admin API de Supabase Auth inserta el usuario con el app_metadata por defecto
+-- ({provider, providers}) y añade el que le pasa el backend justo después, en otro
+-- UPDATE de la misma transacción. Por eso crear_perfil ve la cuenta como CLIENTE y
+-- este segundo trigger copia rol, negocio y es_dueno cuando app_metadata los trae.
+create function public.sincronizar_perfil()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+    if new.raw_app_meta_data ->> 'rol' is not null then
+        update public.perfiles
+           set rol        = new.raw_app_meta_data ->> 'rol',
+               negocio_id = (new.raw_app_meta_data ->> 'negocio_id')::bigint,
+               es_dueno   = coalesce((new.raw_app_meta_data ->> 'es_dueno')::boolean, false),
+               disponible = disponible and (new.raw_app_meta_data ->> 'rol') = 'REPARTIDOR'
+         where id = new.id;
+    end if;
+    return new;
+end;
+$$;
+
+revoke execute on function public.sincronizar_perfil() from public, anon, authenticated;
+
+create trigger al_cambiar_app_metadata
+    after update of raw_app_meta_data on auth.users
+    for each row
+    when (old.raw_app_meta_data is distinct from new.raw_app_meta_data)
+    execute function public.sincronizar_perfil();
+
 
 -- -----------------------------------------------------------------------------
 -- 3. Custom Access Token Hook (arquitectura 5.1)
