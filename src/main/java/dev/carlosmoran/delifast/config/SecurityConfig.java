@@ -32,7 +32,8 @@ public class SecurityConfig {
                         .requestMatchers("/admin/**").hasRole("ADMINISTRADOR")
                         .requestMatchers("/negocio", "/negocio/**").hasRole("NEGOCIO")
                         .requestMatchers(HttpMethod.POST, "/pedidos/*/aceptar", "/pedidos/*/rechazar",
-                                "/pedidos/*/listo", "/pedidos/*/asignar").hasRole("NEGOCIO")
+                                "/pedidos/*/listo", "/pedidos/*/asignar",
+                                "/incidencias/*/responder", "/incidencias/*/resolver").hasRole("NEGOCIO")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(new SupabaseJwtAuthenticationConverter()))

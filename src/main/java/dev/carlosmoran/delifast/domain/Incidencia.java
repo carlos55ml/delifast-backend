@@ -77,6 +77,14 @@ public class Incidencia {
     }
 
     public void resolver(Usuario responsable) {
+        resolver(responsable, null);
+    }
+
+    /** Resuelve la incidencia; si llega respuesta, se guarda a la vez. */
+    public void resolver(Usuario responsable, String respuesta) {
+        if (respuesta != null) {
+            this.respuesta = respuesta;
+        }
         this.responsable = responsable;
         this.estado = EstadoIncidencia.RESUELTA;
         this.fechaResolucion = OffsetDateTime.now();
