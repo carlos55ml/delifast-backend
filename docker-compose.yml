@@ -1,0 +1,13 @@
+# API de DeliFast en un contenedor, con la configuración de .env.
+# La base de datos, Auth, Realtime y Storage están en Supabase (proyecto delifast-dev).
+# Uso: cp .env.example .env (y rellénalo) && docker compose up -d --build
+name: delifast
+
+services:
+  api:
+    build: .
+    container_name: delifast-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${SERVER_PORT:-8080}:8080"

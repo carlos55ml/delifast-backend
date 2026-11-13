@@ -1,0 +1,10 @@
+# Perfil de producción: proyecto Supabase delifast-prod (credenciales en variables de entorno de Render/Railway).
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
