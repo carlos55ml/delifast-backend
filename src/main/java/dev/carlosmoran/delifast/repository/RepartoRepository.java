@@ -28,4 +28,12 @@ public interface RepartoRepository extends JpaRepository<Reparto, Long> {
               and r.pedido.negocio.id = :negocioId
             group by r.repartidor.id""")
     List<RepartosPorRepartidor> contarEnRepartoPorRepartidor(@Param("negocioId") Long negocioId);
+
+    /** Repartos asignados desde un momento (entregados o no) por repartidor del negocio. */
+    @Query("""
+            select r.repartidor.id as repartidorId, count(r) as repartos from Reparto r
+            where r.fechaAsignacion >= :desde and r.pedido.negocio.id = :negocioId
+            group by r.repartidor.id""")
+    List<RepartosPorRepartidor> contarAsignadosDesde(@Param("negocioId") Long negocioId,
+                                                     @Param("desde") java.time.OffsetDateTime desde);
 }

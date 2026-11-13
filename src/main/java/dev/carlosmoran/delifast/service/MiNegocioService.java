@@ -4,46 +4,34 @@ import dev.carlosmoran.delifast.domain.DiaSemana;
 import dev.carlosmoran.delifast.domain.EstadoPedido;
 import dev.carlosmoran.delifast.domain.HorarioApertura;
 import dev.carlosmoran.delifast.domain.Negocio;
-import dev.carlosmoran.delifast.domain.Repartidor;
 import dev.carlosmoran.delifast.dto.LocalidadResponse;
 import dev.carlosmoran.delifast.dto.negocio.DatosMiNegocioRequest;
 import dev.carlosmoran.delifast.dto.negocio.FranjaHorarioDto;
 import dev.carlosmoran.delifast.dto.negocio.MiNegocioResponse;
 import dev.carlosmoran.delifast.exception.ValidacionException;
-import dev.carlosmoran.delifast.dto.negocio.RepartidorNegocioResponse;
 import dev.carlosmoran.delifast.repository.PedidoRepository;
-import dev.carlosmoran.delifast.repository.RepartidorRepository;
-import dev.carlosmoran.delifast.repository.RepartoRepository;
 import dev.carlosmoran.delifast.security.UsuarioAutenticado;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Datos del propio negocio para su panel: cabecera, configuración (N07), horario y repartidores. */
+/** Datos del propio negocio para su panel: cabecera, configuración (N07) y horario. */
 @Service
 public class MiNegocioService {
 
     private final NegocioActual negocioActual;
     private final PedidoRepository pedidos;
-    private final RepartidorRepository repartidores;
-    private final RepartoRepository repartos;
     private final Imagenes imagenes;
     private final Clock clock;
 
-    public MiNegocioService(NegocioActual negocioActual, PedidoRepository pedidos, RepartidorRepository repartidores,
-                            RepartoRepository repartos, Imagenes imagenes, Clock clock) {
+    public MiNegocioService(NegocioActual negocioActual, PedidoRepository pedidos, Imagenes imagenes, Clock clock) {
         this.imagenes = imagenes;
         this.negocioActual = negocioActual;
         this.pedidos = pedidos;
-        this.repartidores = repartidores;
-        this.repartos = repartos;
         this.clock = clock;
     }
 
@@ -137,21 +125,6 @@ public class MiNegocioService {
 
     private static String textoOpcional(String texto) {
         return texto == null || texto.isBlank() ? null : texto.trim();
-    }
-
-    @Transactional(readOnly = true)
-    public List<RepartidorNegocioResponse> repartidores(UsuarioAutenticado usuario, Boolean soloDisponibles) {
-        Long negocioId = negocioActual.id(usuario);
-        List<Repartidor> lista = Boolean.TRUE.equals(soloDisponibles)
-                ? repartidores.findByNegocioIdAndActivoTrueAndDisponibleTrueOrderByNombreAsc(negocioId)
-                : repartidores.findByNegocioIdOrderByNombreAsc(negocioId);
-        Map<UUID, Long> enReparto = repartos.contarEnRepartoPorRepartidor(negocioId).stream()
-                .collect(Collectors.toMap(RepartoRepository.RepartosPorRepartidor::getRepartidorId,
-                        RepartoRepository.RepartosPorRepartidor::getRepartos));
-        return lista.stream()
-                .map(r -> new RepartidorNegocioResponse(r.getId(), r.getNombre(), r.getEmail(), r.getTelefono(),
-                        r.isActivo(), r.isDisponible(), enReparto.getOrDefault(r.getId(), 0L)))
-                .toList();
     }
 
     private MiNegocioResponse aRespuesta(Negocio n) {

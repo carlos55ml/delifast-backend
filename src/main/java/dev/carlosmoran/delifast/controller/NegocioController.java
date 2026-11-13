@@ -9,7 +9,6 @@ import dev.carlosmoran.delifast.dto.negocio.FranjaHorarioDto;
 import dev.carlosmoran.delifast.dto.negocio.MiNegocioResponse;
 import dev.carlosmoran.delifast.dto.negocio.PedidoNegocioResponse;
 import dev.carlosmoran.delifast.dto.negocio.RechazarPedidoRequest;
-import dev.carlosmoran.delifast.dto.negocio.RepartidorNegocioResponse;
 import dev.carlosmoran.delifast.security.UsuarioAutenticado;
 import dev.carlosmoran.delifast.service.MiNegocioService;
 import dev.carlosmoran.delifast.service.PedidoNegocioService;
@@ -67,12 +66,6 @@ public class NegocioController {
     public MiNegocioResponse cambiarAbierto(@AuthenticationPrincipal Jwt jwt,
                                             @Valid @RequestBody CambioAbiertoRequest datos) {
         return miNegocio.cambiarAbierto(UsuarioAutenticado.desde(jwt), datos.abierto());
-    }
-
-    @GetMapping("/negocio/repartidores")
-    public List<RepartidorNegocioResponse> repartidores(@AuthenticationPrincipal Jwt jwt,
-                                                        @RequestParam(required = false) Boolean disponible) {
-        return miNegocio.repartidores(UsuarioAutenticado.desde(jwt), disponible);
     }
 
     @GetMapping("/negocio/pedidos")

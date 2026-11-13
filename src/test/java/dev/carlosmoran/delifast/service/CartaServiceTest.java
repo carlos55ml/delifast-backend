@@ -62,17 +62,19 @@ class CartaServiceTest {
     }
 
     @Test
-    void cartaSinBorradosYPorNombre() {
+    void cartaSinBorradosYEnOrdenDeCreacion() {
         Producto borrado = new Producto(hamburguesas, "Antigua", BigDecimal.ONE);
+        ReflectionTestUtils.setField(borrado, "id", 1L);
         borrado.setActivo(false);
         Producto agotada = new Producto(hamburguesas, "BBQ", BigDecimal.TEN);
+        ReflectionTestUtils.setField(agotada, "id", 9L);
         agotada.marcarAgotado();
         hamburguesas.getProductos().addAll(List.of(clasica, borrado, agotada));
         when(categorias.findByNegocioIdOrderByOrdenAscIdAsc(7L)).thenReturn(List.of(hamburguesas));
 
         List<CategoriaCartaResponse> carta = servicio.carta(GESTOR);
 
-        assertThat(carta.getFirst().productos()).extracting(ProductoCartaResponse::nombre).containsExactly("BBQ", "Clásica");
+        assertThat(carta.getFirst().productos()).extracting(ProductoCartaResponse::nombre).containsExactly("Clásica", "BBQ");
     }
 
     @Test

@@ -59,12 +59,19 @@ public class SupabaseAuthAdminClient implements SupabaseAuthAdmin {
         appMetadata.put("negocio_id", cuenta.negocioId());
         appMetadata.put("es_dueno", cuenta.esDueno());
 
+        // Lo lee el trigger crear_perfil al insertar el usuario (perfiles.nombre y telefono).
+        Map<String, Object> userMetadata = new HashMap<>();
+        userMetadata.put("nombre", cuenta.nombre());
+        if (cuenta.telefono() != null) {
+            userMetadata.put("telefono", cuenta.telefono());
+        }
+
         Map<String, Object> usuario = llamar(() -> http.post().uri("/admin/users")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of(
                         "email", cuenta.email(),
                         "email_confirm", false,
-                        "user_metadata", Map.of("nombre", cuenta.nombre()),
+                        "user_metadata", userMetadata,
                         "app_metadata", appMetadata))
                 .retrieve()
                 .body(MAPA));

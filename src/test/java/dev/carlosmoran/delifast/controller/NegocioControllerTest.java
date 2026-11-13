@@ -247,15 +247,4 @@ class NegocioControllerTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest());
     }
-
-    @Test
-    void repartidoresDisponibles() throws Exception {
-        when(miNegocio.repartidores(GESTOR, true)).thenReturn(List.of(
-                new dev.carlosmoran.delifast.dto.negocio.RepartidorNegocioResponse(MARTA, "Marta Díaz",
-                        "marta@lasirena.es", null, true, true, 1)));
-
-        mvc.perform(get("/negocio/repartidores?disponible=true").with(gestor(7)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].pedidosEnReparto").value(1));
-    }
 }

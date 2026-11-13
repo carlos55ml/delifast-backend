@@ -49,10 +49,11 @@ public class GlobalExceptionHandler {
                 "No se ha podido completar la operación con el servicio de cuentas. Inténtalo de nuevo.");
     }
 
-    /** Por si un 403 llega desde un controlador o servicio (seguridad por método). */
+    /** 403 lanzado desde un servicio (solo el dueño, negocio suspendido...). */
     @ExceptionHandler(AccessDeniedException.class)
     ProblemDetail prohibido(AccessDeniedException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Tu rol no permite esta operación");
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,
+                ex.getMessage() != null ? ex.getMessage() : "Tu rol no permite esta operación");
     }
 
     /** Parámetro con un valor que no encaja (por ejemplo ?estado=NOEXISTE o un id no numérico). */
