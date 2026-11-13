@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
   title: DeliFast API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     Contrato REST de la API de DeliFast (Spring Boot). Es la fuente de verdad compartida
     entre `DeliFast_Web` (que genera sus tipos con `npm run api:types`) y `DeliFast_Backend`
     (que lo copia en `docs/api/openapi.yaml` y lo implementa).
 
     Cubre la zona de **administración** (RF-28..RF-31), el **panel del negocio** (pedidos
-    RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18, equipo RF-19) y lo mínimo común (`/me`,
+    RF-14..RF-16 y RF-20, carta RF-17, configuración RF-18, equipo RF-19, incidencias RF-21) y lo mínimo común (`/me`,
     `/localidades`). El resto del negocio y el repartidor se añadirán aquí cuando se programen.
 
     Convenciones:
@@ -49,6 +49,12 @@ tags:
       el resto recibe 403. El alta crea la cuenta en Supabase Auth con la Admin API
       (`inviteUserByEmail`, `app_metadata` = `{rol, negocio_id}`) y la persona recibe un email para
       crear su contraseña. Desactivar una cuenta cierra sus sesiones (arquitectura 5.1).
+  - name: Negocio · Incidencias
+    description: |
+      Incidencias de los pedidos del negocio (N05, RF-21). Las comunica el cliente desde la app o el
+      repartidor (RF-12, RF-26). El negocio responde (ABIERTA → RESPONDIDA, el cliente ve la
+      respuesta) y la marca como resuelta (→ RESUELTA). Quien responde o resuelve queda como
+      `responsable_id`.
   - name: Negocio · Pedidos
     description: |
       Panel de pedidos del negocio (N01, N02, N08). Estados: RECIBIDO → EN_PREPARACION (aceptar)
@@ -867,6 +873,99 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problema" }
 
+
+  /negocio/incidencias:
+    get:
+      tags: [Negocio · Incidencias]
+      operationId: listarIncidenciasNegocio
+      summary: Incidencias de los pedidos del negocio (N05, RF-21)
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          description: |
+            Uno o varios estados. Sin él, todas. El filtro "Abiertas" de la web pide ABIERTA y RESPONDIDA.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/EstadoIncidencia" }
+      responses:
+        "200":
+          description: Incidencias, de la más reciente a la más antigua
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IncidenciaNegocio" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /incidencias/{id}/responder:
+    parameters:
+      - $ref: "#/components/parameters/IncidenciaId"
+    post:
+      tags: [Negocio · Incidencias]
+      operationId: responderIncidencia
+      summary: Responder una incidencia (→ RESPONDIDA, RF-21)
+      description: Si ya estaba respondida, sustituye la respuesta. El cliente la ve en la app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [respuesta]
+              properties:
+                respuesta: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "200":
+          description: Incidencia respondida
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidenciaNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409":
+          description: La incidencia ya está resuelta
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+
+  /incidencias/{id}/resolver:
+    parameters:
+      - $ref: "#/components/parameters/IncidenciaId"
+    post:
+      tags: [Negocio · Incidencias]
+      operationId: resolverIncidencia
+      summary: Marcar una incidencia como resuelta (→ RESUELTA, RF-21)
+      description: Si llega `respuesta`, se guarda a la vez. Guarda la fecha de resolución.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                respuesta: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "200":
+          description: Incidencia resuelta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidenciaNegocio" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409":
+          description: La incidencia ya está resuelta
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problema" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -892,6 +991,11 @@ components:
       required: true
       schema: { type: integer, format: int64 }
     ProductoId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    IncidenciaId:
       name: id
       in: path
       required: true
@@ -1375,3 +1479,36 @@ components:
           required: [email]
           properties:
             email: { type: string, format: email }
+
+    IncidenciaNegocio:
+      type: object
+      required: [id, tipo, estado, origen, descripcion, fechaCreacion, autor, pedido]
+      properties:
+        id: { type: integer, format: int64 }
+        tipo: { $ref: "#/components/schemas/TipoIncidencia" }
+        estado: { $ref: "#/components/schemas/EstadoIncidencia" }
+        origen: { $ref: "#/components/schemas/OrigenIncidencia" }
+        descripcion: { type: string }
+        respuesta: { type: [string, "null"] }
+        fechaCreacion: { type: string, format: date-time }
+        fechaResolucion: { type: [string, "null"], format: date-time }
+        autor:
+          type: object
+          description: Quien la comunicó (el cliente o el repartidor, según `origen`).
+          required: [nombre]
+          properties:
+            nombre: { type: string, examples: [Juan Torres] }
+        pedido:
+          type: object
+          required: [id, codigo, total, metodoPago, cliente]
+          properties:
+            id: { type: integer, format: int64 }
+            codigo: { type: string, examples: [DF-001036] }
+            total: { type: number }
+            metodoPago: { $ref: "#/components/schemas/MetodoPago" }
+            cliente:
+              type: object
+              required: [nombre, telefono]
+              properties:
+                nombre: { type: string }
+                telefono: { type: string, description: Teléfono de contacto del pedido. }
