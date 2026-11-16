@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.admin;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import dev.carlosmoran.delifast.domain.EstadoIncidencia;
 import dev.carlosmoran.delifast.domain.Incidencia;
 import dev.carlosmoran.delifast.domain.OrigenIncidencia;
@@ -19,8 +20,12 @@ public record IncidenciaAdminResponse(
         PedidoRef pedido,
         NegocioRef negocio) {
 
+    @Schema(name = "IncidenciaAdminPedidoRef")
+
     public record PedidoRef(Long id, String codigo) {
     }
+
+    @Schema(name = "IncidenciaAdminNegocioRef")
 
     public record NegocioRef(Long id, String nombre) {
     }

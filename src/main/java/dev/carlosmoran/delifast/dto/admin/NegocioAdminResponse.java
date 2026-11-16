@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.admin;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import dev.carlosmoran.delifast.dto.LocalidadResponse;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -16,6 +17,8 @@ public record NegocioAdminResponse(
         boolean abierto,
         boolean activo,
         OffsetDateTime fechaAlta) {
+
+    @Schema(name = "NegocioAdminDueno")
 
     public record Dueno(UUID id, String nombre, String email) {
     }

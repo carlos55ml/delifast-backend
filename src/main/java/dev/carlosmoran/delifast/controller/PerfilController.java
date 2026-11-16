@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import dev.carlosmoran.delifast.dto.PerfilResponse;
 import dev.carlosmoran.delifast.service.PerfilService;
 import java.util.UUID;
@@ -17,6 +18,7 @@ public class PerfilController {
         this.perfiles = perfiles;
     }
 
+    @Operation(operationId = "obtenerPerfil", summary = "Perfil del usuario autenticado", tags = "Perfil")
     @GetMapping("/me")
     public PerfilResponse perfil(@AuthenticationPrincipal Jwt jwt) {
         return perfiles.obtener(UUID.fromString(jwt.getSubject()));

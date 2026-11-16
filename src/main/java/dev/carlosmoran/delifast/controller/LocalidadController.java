@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import dev.carlosmoran.delifast.dto.LocalidadResponse;
 import dev.carlosmoran.delifast.service.LocalidadService;
 import java.util.List;
@@ -16,6 +17,7 @@ public class LocalidadController {
     }
 
     /** Pública: también la usa la app al registrarse. */
+    @Operation(operationId = "listarLocalidades", summary = "Localidades donde opera DeliFast", tags = "Localidades")
     @GetMapping("/localidades")
     public List<LocalidadResponse> listar() {
         return localidades.listar();

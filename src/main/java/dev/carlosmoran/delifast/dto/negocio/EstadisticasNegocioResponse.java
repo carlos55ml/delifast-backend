@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.negocio;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -19,11 +20,17 @@ public record EstadisticasNegocioResponse(
         List<Tramo> serie,
         List<ProductoVendido> masVendidos) {
 
+    @Schema(name = "EstadisticasNegocioIncidencias")
+
     public record Incidencias(long total, long resueltas, long abiertas) {
     }
 
+    @Schema(name = "EstadisticasNegocioTramo")
+
     public record Tramo(String etiqueta, long pedidos) {
     }
+
+    @Schema(name = "EstadisticasNegocioProductoVendido")
 
     public record ProductoVendido(String nombre, long unidades) {
     }

@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.cliente;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import dev.carlosmoran.delifast.domain.MetodoPago;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -16,6 +17,8 @@ public record NuevoPedidoRequest(
         @NotNull MetodoPago metodoPago,
         @Size(max = 500) String nota,
         @NotEmpty @Size(max = 50) List<@Valid @NotNull Linea> lineas) {
+
+    @Schema(name = "NuevoPedidoLinea")
 
     public record Linea(@NotNull Long productoId, @NotNull @Min(1) @Max(50) Integer cantidad) {
     }

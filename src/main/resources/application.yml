@@ -58,8 +58,23 @@ management:
         include: health,info
 
 springdoc:
+  # Sin esto springdoc añade a TODAS las operaciones todos los errores de GlobalExceptionHandler
+  # (502, 409...); los que importan ya vienen en el contrato y en OpenApiConfig.
+  override-with-generic-response: false
+  default-produces-media-type: application/json
   swagger-ui:
     path: /swagger-ui.html
+    # Dos especificaciones en el desplegable: la generada desde el código y el contrato acordado.
+    urls:
+      - name: Implementada (springdoc)
+        url: /v3/api-docs
+      - name: Contrato (docs/api/openapi.yaml)
+        url: /contrato/openapi.yaml
+    urls-primary-name: Implementada (springdoc)
+    persist-authorization: true
+    tags-sorter: alpha
+    operations-sorter: method
+    display-request-duration: true
 
 delifast:
   supabase:

@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import dev.carlosmoran.delifast.domain.EstadoIncidencia;
 import dev.carlosmoran.delifast.dto.admin.IncidenciaAdminResponse;
 import dev.carlosmoran.delifast.dto.admin.ResumenAdminResponse;
@@ -21,6 +22,7 @@ public class AdminConsultaController {
         this.servicio = servicio;
     }
 
+    @Operation(operationId = "listarIncidenciasAdmin", summary = "Incidencias de todos los negocios (A04, RF-30)", tags = "Administración")
     @GetMapping("/incidencias")
     public List<IncidenciaAdminResponse> incidencias(
             @RequestParam(required = false) List<EstadoIncidencia> estado,
@@ -28,6 +30,7 @@ public class AdminConsultaController {
         return servicio.incidencias(estado, negocioId);
     }
 
+    @Operation(operationId = "obtenerResumenAdmin", summary = "Resumen de la plataforma (A01, RF-31)", tags = "Administración")
     @GetMapping("/resumen")
     public ResumenAdminResponse resumen() {
         return servicio.resumen();

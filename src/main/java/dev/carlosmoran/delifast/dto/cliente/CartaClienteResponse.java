@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.cliente;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import dev.carlosmoran.delifast.domain.Categoria;
 import dev.carlosmoran.delifast.domain.Producto;
 import java.math.BigDecimal;
@@ -9,8 +10,12 @@ import java.util.List;
 /** Carta de un negocio para el cliente (RF-06). */
 public record CartaClienteResponse(NegocioClienteResponse negocio, List<CategoriaCliente> categorias) {
 
+    @Schema(name = "CartaClienteCategoriaCliente")
+
     public record CategoriaCliente(Long id, String nombre, List<ProductoCliente> productos) {
     }
+
+    @Schema(name = "CartaClienteProductoCliente")
 
     public record ProductoCliente(Long id, String nombre, String descripcion, BigDecimal precio, String fotoUrl,
                                   boolean disponible) {

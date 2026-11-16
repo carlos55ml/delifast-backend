@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import dev.carlosmoran.delifast.domain.EstadoIncidencia;
 import dev.carlosmoran.delifast.dto.negocio.EstadisticasNegocioResponse;
 import dev.carlosmoran.delifast.dto.negocio.IncidenciaNegocioResponse;
@@ -33,24 +34,28 @@ public class IncidenciaNegocioController {
         this.estadisticas = estadisticas;
     }
 
+    @Operation(operationId = "listarIncidenciasNegocio", summary = "Incidencias de los pedidos del negocio (N05, RF-21)", tags = "Negocio · Incidencias")
     @GetMapping("/negocio/incidencias")
     public List<IncidenciaNegocioResponse> listar(@AuthenticationPrincipal Jwt jwt,
                                                   @RequestParam(required = false) List<EstadoIncidencia> estado) {
         return incidencias.listar(UsuarioAutenticado.desde(jwt), estado);
     }
 
+    @Operation(operationId = "responderIncidencia", summary = "Responder una incidencia (→ RESPONDIDA, RF-21)", tags = "Negocio · Incidencias")
     @PostMapping("/incidencias/{id}/responder")
     public IncidenciaNegocioResponse responder(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
                                                @Valid @RequestBody RespuestaIncidenciaRequest datos) {
         return incidencias.responder(UsuarioAutenticado.desde(jwt), id, datos.respuesta());
     }
 
+    @Operation(operationId = "resolverIncidencia", summary = "Marcar una incidencia como resuelta (→ RESUELTA, RF-21)", tags = "Negocio · Incidencias")
     @PostMapping("/incidencias/{id}/resolver")
     public IncidenciaNegocioResponse resolver(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
                                               @Valid @RequestBody(required = false) ResolverIncidenciaRequest datos) {
         return incidencias.resolver(UsuarioAutenticado.desde(jwt), id, datos == null ? null : datos.respuesta());
     }
 
+    @Operation(operationId = "obtenerEstadisticasNegocio", summary = "Estadísticas del negocio por día, semana o mes (N06, RF-22)", tags = "Negocio · Estadísticas")
     @GetMapping("/negocio/estadisticas")
     public EstadisticasNegocioResponse estadisticas(@AuthenticationPrincipal Jwt jwt,
                                                     @RequestParam Periodo periodo,

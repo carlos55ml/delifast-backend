@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.cliente;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import dev.carlosmoran.delifast.domain.EstadoPedido;
 import dev.carlosmoran.delifast.domain.MetodoPago;
 import dev.carlosmoran.delifast.domain.Pedido;
@@ -25,11 +26,17 @@ public record PedidoClienteResponse(
         List<Linea> lineas,
         List<Cambio> historial) {
 
+    @Schema(name = "PedidoClienteNegocioRef")
+
     public record NegocioRef(Long id, String nombre) {
     }
 
+    @Schema(name = "PedidoClienteLinea")
+
     public record Linea(Long productoId, String nombreProducto, BigDecimal precioUnitario, int cantidad) {
     }
+
+    @Schema(name = "PedidoClienteCambio")
 
     public record Cambio(EstadoPedido estado, OffsetDateTime fecha) {
     }

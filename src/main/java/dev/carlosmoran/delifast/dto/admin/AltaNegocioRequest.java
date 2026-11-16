@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.admin;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -13,6 +14,8 @@ public record AltaNegocioRequest(
         @NotBlank @Size(max = 200) String direccion,
         @NotBlank @Size(min = 9, max = 20) String telefono,
         @NotNull @Valid Dueno dueno) {
+
+    @Schema(name = "AltaNegocioDueno")
 
     public record Dueno(
             @NotBlank @Size(max = 100) String nombre,

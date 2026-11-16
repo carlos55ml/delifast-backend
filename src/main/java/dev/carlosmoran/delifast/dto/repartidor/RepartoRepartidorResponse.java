@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.repartidor;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import dev.carlosmoran.delifast.domain.EstadoPedido;
 import dev.carlosmoran.delifast.domain.MetodoPago;
 import dev.carlosmoran.delifast.domain.Pedido;
@@ -18,8 +19,12 @@ public record RepartoRepartidorResponse(
         MetodoPago metodoCobro,
         PedidoRef pedido) {
 
+    @Schema(name = "RepartoRepartidorCliente")
+
     public record Cliente(String nombre) {
     }
+
+    @Schema(name = "RepartoRepartidorPedidoRef")
 
     public record PedidoRef(Long id, String codigo, Cliente cliente, String direccionEntrega, Double latitud,
                             Double longitud, String telefonoContacto, MetodoPago metodoPago, String nota,

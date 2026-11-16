@@ -1,5 +1,6 @@
 package dev.carlosmoran.delifast.dto.negocio;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import dev.carlosmoran.delifast.domain.EstadoIncidencia;
 import dev.carlosmoran.delifast.domain.Incidencia;
 import dev.carlosmoran.delifast.domain.MetodoPago;
@@ -22,11 +23,17 @@ public record IncidenciaNegocioResponse(
         Autor autor,
         PedidoRef pedido) {
 
+    @Schema(name = "IncidenciaNegocioAutor")
+
     public record Autor(String nombre) {
     }
 
+    @Schema(name = "IncidenciaNegocioCliente")
+
     public record Cliente(String nombre, String telefono) {
     }
+
+    @Schema(name = "IncidenciaNegocioPedidoRef")
 
     public record PedidoRef(Long id, String codigo, BigDecimal total, MetodoPago metodoPago, Cliente cliente) {
     }
